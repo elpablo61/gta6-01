@@ -101,14 +101,18 @@ function buildWorld(seed) {
     plaza: { ...nodePos(5, 8), name: 'Crescent Plaza' },
   };
 
-  // Roadside parked cars (stealable) along a few streets.
+  // Roadside parked cars (stealable) along a few streets — never right by
+  // the fixer garage, so the opening sports car is the obvious first car.
+  const gx = world.landmarks.fixerGarage.x, gy = world.landmarks.fixerGarage.y;
   for (let k = 0; k < 14; k++) {
     const i = rng.int(0, GRID_N - 1), j = rng.int(0, GRID_N - 1);
     const horizontal = rng.chance(0.5);
     const off = (rng.chance(0.5) ? 1 : -1) * (ROAD_W / 2 - 14);
+    const sx = horizontal ? roadX(i) + rng.range(-90, 90) : roadX(i) + off;
+    const sy = horizontal ? roadY(j) + off : roadY(j) + rng.range(-90, 90);
+    if (Math.hypot(sx - gx, sy - gy) < 170) continue;
     world.parkedSpots.push({
-      x: horizontal ? roadX(i) + rng.range(-90, 90) : roadX(i) + off,
-      y: horizontal ? roadY(j) + off : roadY(j) + rng.range(-90, 90),
+      x: sx, y: sy,
       angle: horizontal ? (off > 0 ? 0 : Math.PI) : (off > 0 ? Math.PI / 2 : -Math.PI / 2),
       type: rng.pick(['sedan', 'sedan', 'taxi', 'sports', 'sedan', 'truck']),
     });
@@ -321,4 +325,20 @@ function shade(hex, amt) {
   return `rgb(${r},${gg},${b})`;
 }
 
-export { buildWorld, collideCircle, pointInBuilding, nearestNode, nodePos, nodeNeighbours, bfsPath, shade };
+// Nearest point on any road centre line (roads are axis-aligned), and how
+// far off-road the point is. Used to snap spawns onto roads and to recover
+// vehicles that get pushed into a block.
+function nearestRoadPoint(world, x, y) {
+  let best = { x, y }, bestD = 1e9;
+  for (let i = 0; i < GRID_N; i++) {
+    const rx = world.roadX(i);
+    const d = Math.abs(x - rx);
+    if (d < bestD) { bestD = d; best = { x: rx, y }; }
+    const ry = world.roadY(i);
+    const d2 = Math.abs(y - ry);
+    if (d2 < bestD) { bestD = d2; best = { x, y: ry }; }
+  }
+  return { point: best, dist: bestD };
+}
+
+export { buildWorld, collideCircle, pointInBuilding, nearestNode, nodePos, nodeNeighbours, bfsPath, shade, nearestRoadPoint };

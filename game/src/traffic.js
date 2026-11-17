@@ -1,13 +1,15 @@
 import { TRAFFIC_TARGET, DESPAWN_DIST, SPAWN_DIST, ROAD_SPACING, GRID_N } from './config.js';
 import { nearestNode, nodePos, nodeNeighbours, collideCircle } from './world.js';
 import { createVehicle } from './vehicles.js';
+import { playerPos } from './player.js';
 
 // Traffic cars drive the road graph: follow waypoints, slow for the car ahead,
 // stop at busy intersections, never stack. Only cars near the player live.
 function createTrafficCar(G, rng) {
   const types = ['sedan', 'sedan', 'taxi', 'truck', 'sports', 'sedan'];
   const type = rng.pick(types);
-  const node = nearestNode(G.world, G.player.x, G.player.y);
+  const pp = playerPos(G);
+  const node = nearestNode(G.world, pp.x, pp.y);
   const i = Math.max(0, Math.min(GRID_N - 1, node.i + rng.int(-4, 4)));
   const j = Math.max(0, Math.min(GRID_N - 1, node.j + rng.int(-4, 4)));
   const pos = { x: G.world.roadX(i), y: G.world.roadY(j) };

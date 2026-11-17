@@ -1,13 +1,16 @@
 import { PED_TARGET, DESPAWN_DIST, SPAWN_DIST, ROAD_W, SIDEWALK_W } from './config.js';
 import { nearestNode, nodePos, nodeNeighbours, collideCircle } from './world.js';
-import { addWantedHeat, spawnParticle } from './player.js';
+import { addWantedHeat, spawnParticle, playerPos } from './player.js';
 
 // Pedestrians walk the sidewalks, cross at intersections, and flee from
 // gunshots, speeding cars and police chases.
 function createPedestrian(G, rng) {
-  const node = nearestNode(G.world, G.player.x, G.player.y);
-  const i = Math.max(0, Math.min(10, node.i + rng.int(-4, 4)));
-  const j = Math.max(0, Math.min(10, node.j + rng.int(-4, 4)));
+  const pp = playerPos(G);
+  const node = nearestNode(G.world, pp.x, pp.y);
+  // Spawn close to the player (within 2 blocks) so the streets around the
+  // player always feel inhabited — the player outruns anything farther away.
+  const i = Math.max(0, Math.min(10, node.i + rng.int(-2, 2)));
+  const j = Math.max(0, Math.min(10, node.j + rng.int(-2, 2)));
   const horizontal = rng.chance(0.5);
   const off = (rng.chance(0.5) ? 1 : -1) * (ROAD_W / 2 + SIDEWALK_W / 2);
   const colors = ['#d94f70', '#4f7fd9', '#e0a53c', '#7fc46a', '#9b6fd9', '#e07a4f'];
@@ -30,7 +33,7 @@ function updatePedestrians(G, dt) {
     if (Math.hypot(ped.x - px, ped.y - py) < SPAWN_DIST * 0.35) continue;
     G.peds.push(ped);
   }
-  const scared = G.shotsFiredRecently > 0 || (p.inCar && Math.abs(p.inCar.speed) > 380);
+  const scared = G.shotsFiredRecently > 0 || (p.inCar && Math.abs(p.inCar.speed) > 180);
   for (const ped of G.peds) {
     if (!ped.alive) continue;
     // Flee from danger: run away from the player / gunfire.
@@ -66,7 +69,7 @@ function updatePedestrians(G, dt) {
     // Hit by the player's car: a crime, and the pedestrian goes down.
     if (p.inCar && Math.abs(p.inCar.speed) > 90 && Math.hypot(ped.x - p.inCar.x, ped.y - p.inCar.y) < 26) {
       ped.alive = false;
-      addWantedHeat(G, 10, 'pedestrian hit');
+      addWantedHeat(G, 6, 'pedestrian hit');
       for (let i = 0; i < 8; i++) spawnParticle(G, ped.x, ped.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, 0.5, '#e07a4f', 3);
     }
   }

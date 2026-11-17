@@ -5,7 +5,13 @@ import {
 import { collideCircle, pointInBuilding } from './world.js';
 import { playGunshot } from './audio.js';
 
-// Rook, the player character: on foot movement, aiming, shooting, health.
+// The player's effective position: the car when driving, the feet otherwise.
+// Spawn systems must use this, not the stale on-foot coordinates.
+function playerPos(G) {
+  const p = G.player;
+  return p.inCar ? { x: p.inCar.x, y: p.inCar.y } : { x: p.x, y: p.y };
+}
+
 function createPlayer(x, y) {
   return {
     x, y, angle: 0, speed: 0,
@@ -153,7 +159,7 @@ function updateBullets(G, dt) {
         if (!ped.alive) continue;
         if (Math.hypot(ped.x - b.x, ped.y - b.y) < 13) {
           b.alive = false; ped.alive = false; ped.fleeing = true;
-          addWantedHeat(G, 10, 'pedestrian hit');
+          addWantedHeat(G, 6, 'pedestrian hit');
           spawnImpact(G, b.x, b.y);
           break;
         }
@@ -250,7 +256,7 @@ function spawnSmoke(G, x, y) {
 }
 
 export {
-  createPlayer, updatePlayerOnFoot, damagePlayer, gameOver, respawnPlayer,
+  createPlayer, playerPos, updatePlayerOnFoot, damagePlayer, gameOver, respawnPlayer,
   healPlayer, giveAmmo, fireBullet, updateBullets, spawnParticle, updateParticles,
   toast, addCash, addWantedHeat, updateWantedStars, damageVehicle, spawnSmoke,
 };

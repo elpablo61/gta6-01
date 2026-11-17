@@ -126,7 +126,8 @@ function update(dt) {
   G.shotsFiredRecently = Math.max(0, G.shotsFiredRecently - dt);
   // Car-vs-car bumps: the player's car shoves traffic (and takes damage).
   // NOTE: damageVehicle can wreck the player's car and bail the player out
-  // (inCar -> null), so re-check inCar on every iteration.
+  // (inCar -> null), so re-check inCar on every iteration. Bump damage is
+  // throttled like crash damage: a grind must not deal damage every step.
   if (p.inCar && !p.inCar.wrecked) {
     for (const car of G.cars) {
       if (!p.inCar || p.inCar.wrecked) break;
@@ -136,7 +137,8 @@ function update(dt) {
         const push = (46 - d) / 2;
         const a = Math.atan2(car.y - p.inCar.y, car.x - p.inCar.x);
         car.x += Math.cos(a) * push; car.y += Math.sin(a) * push;
-        if (Math.abs(p.inCar.speed) > 200) {
+        if (Math.abs(p.inCar.speed) > 200 && (p.inCar.crashT || 0) <= 0) {
+          p.inCar.crashT = 0.5;
           damageVehicle(G, car, 3);
           damageVehicle(G, p.inCar, 2);
         }

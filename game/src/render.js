@@ -109,18 +109,18 @@ function render(G) {
   // instantly, drawn on top of everything.
   if (!p.inCar && !p.dead) {
     const sx = p.x - camX, sy = p.y - camY;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(sx, sy + 2, 17, 15, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.ellipse(sx, sy + 2, 21, 18, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath(); ctx.ellipse(sx + 3, sy + 5, 13, 10, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(sx + 3, sy + 5, 15, 11, 0, 0, Math.PI * 2); ctx.fill();
     ctx.lineWidth = 4; ctx.strokeStyle = '#ffffff';
     ctx.fillStyle = '#2f9e44';
-    ctx.beginPath(); ctx.arc(sx, sy, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sx, sy, 17, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#f2c9a0';
-    ctx.beginPath(); ctx.arc(sx, sy - 2, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx, sy - 2, 7, 0, Math.PI * 2); ctx.fill();
     // Aim line + gun.
-    ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(p.angle) * 30, sy + Math.sin(p.angle) * 30); ctx.stroke();
+    ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(p.angle) * 40, sy + Math.sin(p.angle) * 40); ctx.stroke();
   }
   // Bullets: bright cold yellow-white, never red.
   for (const b of G.bullets) {
@@ -137,9 +137,17 @@ function render(G) {
   if (G.muzzle) {
     const sx = G.muzzle.x - camX, sy = G.muzzle.y - camY;
     ctx.fillStyle = 'rgba(255,220,90,0.95)';
-    ctx.beginPath(); ctx.arc(sx, sy, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx, sy, 22, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx, sy, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,220,90,0.9)'; ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ctx.moveTo(sx + Math.cos(a) * 18, sy + Math.sin(a) * 18);
+      ctx.lineTo(sx + Math.cos(a) * 30, sy + Math.sin(a) * 30);
+    }
+    ctx.stroke();
   }
   if (G.muzzleEnemy) {
     const sx = G.muzzleEnemy.x - camX, sy = G.muzzleEnemy.y - camY;

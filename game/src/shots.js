@@ -12,7 +12,7 @@ import { updatePedestrians } from './pedestrians.js';
 // parameters (time of day, wanted heat from earlier off-screen crimes, which
 // mission is running) are the pose definition — the frame itself is a state
 // the real game can reach.
-const SHOT_STEPS = { cover: 780, mission: 2400, night: 720, start: 900 };
+const SHOT_STEPS = { cover: 460, mission: 2400, night: 460, start: 900 };
 
 function runShot(G, name) {
   G.shotMode = true;
@@ -145,8 +145,8 @@ function autopilotStep(G, name) {
   inp.up = inp.down = inp.left = inp.right = false;
   inp.sprint = false; inp.handbrake = false; inp.fire = false;
   if (name === 'mission') return autopilotMission(G);
-  // Cover / night: steal the sports car by the garage, then drive east
-  // along the waterfront road while the police chase.
+  // Cover / night: steal the sports car by the garage, then drive east to
+  // the waterfront road and south along the beach while the police chase.
   const car = nearestParkedSports(G);
   if (!p.inCar) {
     if (car && Math.hypot(car.x - p.x, car.y - p.y) < 60) {
@@ -155,7 +155,7 @@ function autopilotStep(G, name) {
     }
     if (car) { walkToward(G, car.x, car.y); return; }
   }
-  driveToward(G, 2680, G.world.roadY(5));
+  driveToward(G, 2700, G.world.roadY(10));
 }
 
 function autopilotMission(G) {
@@ -186,13 +186,28 @@ function autopilotMission(G) {
 }
 
 function nearestParkedSports(G) {
-  let best = null, bestD = 1e9;
+  // Prefer a sports car parked ON a road (not one deep inside a parking-lot
+  // block the autopilot cannot drive out of); fall back to the nearest
+  // parked car of any type.
+  const onRoad = (x, y) => {
+    const rx = (x - 100) % 260, ry = (y - 100) % 260;
+    const dx = Math.min(rx, 260 - rx), dy = Math.min(ry, 260 - ry);
+    return dx < 45 || dy < 45;
+  };
+  let best = null, bestD = 1e9, bestAny = null, bestAnyD = 1e9;
   for (const car of G.cars) {
     if (car.wrecked || !car.parked) continue;
     const d = Math.hypot(car.x - G.player.x, car.y - G.player.y);
-    if (d < bestD) { best = car; bestD = d; }
+    if (onRoad(car.x, car.y) && d < bestAnyD) { bestAny = car; bestAnyD = d; }
+    if (car.type === 'sports' && onRoad(car.x, car.y) && d < bestD) { best = car; bestD = d; }
   }
-  return best;
+  if (best || bestAny) return best || bestAny;
+  for (const car of G.cars) {
+    if (car.wrecked || !car.parked) continue;
+    const d = Math.hypot(car.x - G.player.x, car.y - G.player.y);
+    if (d < bestAnyD) { bestAny = car; bestAnyD = d; }
+  }
+  return bestAny;
 }
 
 function nearestEnemy(G) {
@@ -209,21 +224,49 @@ function walkToward(G, tx, ty) {
   const p = G.player;
   const dx = tx - p.x, dy = ty - p.y;
   const inp = G.input;
-  inp.right = dx > 12; inp.left = dx < -12;
-  inp.down = dy > 12; inp.up = dy < -12;
-  inp.sprint = Math.hypot(dx, dy) > 120;
+  // If blocked by a building, sidestep perpendicular for a second instead
+  // of walking into the wall forever.
+  const moved = Math.hypot(p.x - (G.walkLastX ?? p.x), p.y - (G.walkLastY ?? p.y));
+  if (G.walkSideT > 0) {
+    G.walkSideT -= STEP;
+    inp.right = G.walkSide > 0; inp.left = G.walkSide < 0;
+    inp.down = true;
+  } else {
+    inp.right = dx > 12; inp.left = dx < -12;
+    inp.down = dy > 12; inp.up = dy < -12;
+    inp.sprint = Math.hypot(dx, dy) > 120;
+    G.walkStuckAcc = (moved < 1.5 ? (G.walkStuckAcc || 0) + STEP : 0);
+    if (G.walkStuckAcc > 0.8) {
+      G.walkStuckAcc = 0;
+      G.walkSideT = 1.0;
+      G.walkSide = Math.abs(dx) > Math.abs(dy) ? (dy > 0 ? 1 : -1) : (dx > 0 ? 1 : -1);
+    }
+  }
+  G.walkLastX = p.x; G.walkLastY = p.y;
 }
 
-// Drive the player's car toward a point using the road graph.
+// Drive the player's car toward a point using the road graph. The path is
+// kept across steps (recomputed only for a new target) so the waypoint never
+// flips behind the car mid-turn; the car slows for turns and caps its speed.
 function driveToward(G, tx, ty) {
   const p = G.player;
   const car = p.inCar;
   const inp = G.input;
   if (!car) return;
-  const from = nearestNode(G.world, car.x, car.y).id;
   const to = nearestNode(G.world, tx, ty).id;
-  const path = bfsPath(from, to);
-  const wp = path.length > 1 ? nodePos(G.world, path[1]) : { x: tx, y: ty };
+  if (!G.autoPath || G.autoTarget !== to) {
+    const from = nearestNode(G.world, car.x, car.y).id;
+    G.autoPath = bfsPath(from, to);
+    G.autoI = 1;
+    G.autoTarget = to;
+  }
+  let wp = G.autoPath.length > 1
+    ? nodePos(G.world, G.autoPath[Math.min(G.autoI, G.autoPath.length - 1)])
+    : { x: tx, y: ty };
+  if (Math.hypot(wp.x - car.x, wp.y - car.y) < 70 && G.autoI < G.autoPath.length - 1) {
+    G.autoI++;
+    wp = nodePos(G.world, G.autoPath[Math.min(G.autoI, G.autoPath.length - 1)]);
+  }
   const want = Math.atan2(wp.y - car.y, wp.x - car.x);
   let diff = want - car.angle;
   while (diff > Math.PI) diff -= Math.PI * 2;
@@ -246,7 +289,7 @@ function driveToward(G, tx, ty) {
     inp.handbrake = Math.abs(car.speed) > 200;
   } else {
     // Cap the autopilot's speed so turns stay on the road.
-    inp.up = Math.abs(car.speed) < 340;
+    inp.up = Math.abs(car.speed) < 300;
   }
   inp.left = diff > 0.12;
   inp.right = diff < -0.12;

@@ -27,6 +27,7 @@ function angleDiff(a, b) {
 function updatePlayerCar(G, dt) {
   const car = G.player.inCar;
   if (!car || car.wrecked) return;
+  car.crashT = Math.max(0, (car.crashT || 0) - dt);
   const inp = G.input;
   const fwd = (inp.up ? 1 : 0) - (inp.down ? 1 : 0);
   const steerIn = (inp.left ? 1 : 0) - (inp.right ? 1 : 0);
@@ -50,8 +51,11 @@ function updatePlayerCar(G, dt) {
   const ny = car.y + Math.sin(car.angle) * car.speed * dt;
   const c = collideCircle(G.world, nx, ny, car.len * 0.42);
   if (c.hit) {
-    if (Math.abs(car.speed) > 150) {
-      damageVehicle(G, car, Math.abs(car.speed) * 0.06);
+    // Crash damage is throttled: one hit per half second, not per step,
+    // or a one-second scrape against a wall wrecks the car outright.
+    if (Math.abs(car.speed) > 150 && car.crashT <= 0) {
+      car.crashT = 0.5;
+      damageVehicle(G, car, Math.abs(car.speed) * 0.03);
       playCrash(G.audio, Math.abs(car.speed) > 320);
       spawnSmoke(G, car.x, car.y);
       addWantedHeat(G, 1, 'crash');

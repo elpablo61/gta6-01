@@ -1,6 +1,6 @@
-import { nearestNode, nodePos, bfsPath, collideCircle, pointInBuilding } from './world.js';
+import { nearestNode, nodePos, bfsPath, collideCircle, pointInBuilding, nearestRoadPoint } from './world.js';
 import { createVehicle } from './vehicles.js';
-import { damagePlayer, fireBullet } from './player.js';
+import { damagePlayer, fireBullet, playerPos } from './player.js';
 import { playSiren, playGunshot } from './audio.js';
 
 const WANTED_STAR_THRESHOLDS = [0, 12, 30, 55, 80];
@@ -87,10 +87,10 @@ function updatePolice(G, dt) {
 }
 
 function spawnFootCop(G) {
-  const p = G.player;
+  const pp = playerPos(G);
   const a = G.rng.range(0, Math.PI * 2);
   const cop = {
-    x: p.x + Math.cos(a) * 320, y: p.y + Math.sin(a) * 320,
+    x: pp.x + Math.cos(a) * 320, y: pp.y + Math.sin(a) * 320,
     angle: 0, speed: 120, health: 50, alive: true, inCar: null,
     replanT: 0, seesPlayer: false, shootT: 0,
   };
@@ -103,11 +103,16 @@ function spawnPatrolCar(G) {
   const p = G.player;
   const px = p.inCar ? p.inCar.x : p.x;
   const py = p.inCar ? p.inCar.y : p.y;
-  // Spawn ahead of the player, on the road, so the pursuit arrives naturally.
+  // Spawn ahead of the player, ON a road, so the pursuit arrives naturally.
+  // Clamped to dry land: never in the water or off the map edge.
   const dir = p.inCar ? p.inCar.angle : p.angle;
   const ahead = 420 + G.rng.range(0, 260);
-  const x = px + Math.cos(dir) * ahead + G.rng.range(-160, 160);
-  const y = py + Math.sin(dir) * ahead + G.rng.range(-160, 160);
+  let x = px + Math.cos(dir) * ahead + G.rng.range(-160, 160);
+  let y = py + Math.sin(dir) * ahead + G.rng.range(-160, 160);
+  x = Math.max(60, Math.min(2880, x));
+  y = Math.max(60, Math.min(2800, y));
+  const snap = nearestRoadPoint(G.world, x, y);
+  x = snap.point.x; y = snap.point.y;
   const car = createVehicle('police', x, y, dir + Math.PI);
   car.police = true;
   car.driver = true; // a cop is driving: taking it is a jacking
@@ -122,7 +127,9 @@ function spawnPatrolCar(G) {
 
 function makeRoadblock(G, px, py) {
   const dir = G.player.inCar ? G.player.inCar.angle : G.player.angle;
-  const bx = px + Math.cos(dir) * 520, by = py + Math.sin(dir) * 520;
+  let bx = px + Math.cos(dir) * 520, by = py + Math.sin(dir) * 520;
+  bx = Math.max(80, Math.min(2880, bx));
+  by = Math.max(80, Math.min(2800, by));
   const cars = [];
   for (const side of [-1, 1]) {
     const car = createVehicle('police',
@@ -168,12 +175,24 @@ function updatePatrolCar(G, c, dt, px, py) {
   }
   const d = Math.hypot(px - car.x, py - car.y);
   let targetAngle;
-  if (d < 260) {
+  // Off-road recovery first: a cop pushed into a block steers back to the
+  // nearest road centre line instead of ramming the building forever.
+  const offRoad = nearestRoadPoint(G.world, car.x, car.y);
+  if (offRoad.dist > 50) {
+    targetAngle = Math.atan2(offRoad.point.y - car.y, offRoad.point.x - car.x);
+    if (Math.abs(car.speed) < 20) {
+      c.stuckAcc = (c.stuckAcc || 0) + dt;
+      if (c.stuckAcc > 1.5) {
+        car.speed = -120;
+        c.stuckAcc = 0;
+      }
+    } else c.stuckAcc = 0;
+  } else if (d < 260) {
     // Close in: ram the player directly.
     targetAngle = Math.atan2(py - car.y, px - car.x);
   } else if (c.path && c.path.length > 1) {
     const wp = nodePos(G.world, c.path[Math.min(c.pathI + 1, c.path.length - 1)]);
-    if (Math.hypot(wp.x - car.x, wp.y - car.y) < 40) c.pathI++;
+    if (Math.hypot(wp.x - car.x, wp.y - car.y) < 50) c.pathI++;
     targetAngle = Math.atan2(wp.y - car.y, wp.x - car.x);
   } else {
     targetAngle = Math.atan2(py - car.y, px - car.x);
@@ -191,13 +210,17 @@ function updatePatrolCar(G, c, dt, px, py) {
   if (cc.hit) car.speed *= 0.5;
   c.x = car.x; c.y = car.y; c.angle = car.angle;
   // Ram damage when the patrol car hits the player's car — then back off
-  // for a moment so the chase reads as a chase, not a pile-up.
+  // for a moment so the chase reads as a chase, not a pile-up. Only one
+  // unit rams at a time (global throttle), or five cops shred the car.
   const p = G.player;
   if (c.ramT > 0) c.ramT -= dt;
   if (p.inCar && Math.hypot(p.inCar.x - car.x, p.inCar.y - car.y) < 44) {
-    p.inCar.damage = Math.min(100, p.inCar.damage + 5 * dt);
+    if (G.time - (G.lastRamT || -99) > 1.5) {
+      G.lastRamT = G.time;
+      p.inCar.damage = Math.min(100, p.inCar.damage + 4);
+    }
     car.speed *= 0.7;
-    if (c.ramT <= 0) c.ramT = 1.5;
+    if (c.ramT <= 0) c.ramT = 2.5;
   }
   // Patrol cars shoot at the player when alongside and the player is on foot.
   c.shootT -= dt;
