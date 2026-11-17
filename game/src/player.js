@@ -41,9 +41,9 @@ function updatePlayerOnFoot(G, dt) {
   // Collision: buildings + water + world bounds.
   const c = collideCircle(G.world, p.x, p.y, PLAYER_RADIUS);
   p.x = c.x; p.y = c.y;
-  // Shooting.
+  // Shooting (hold to fire, or a single click fires one shot).
   p.fireCooldown = Math.max(0, p.fireCooldown - dt);
-  if (inp.fire && p.fireCooldown <= 0 && p.ammo > 0) {
+  if ((inp.fire || inp.pressed.Mouse0) && p.fireCooldown <= 0 && p.ammo > 0) {
     p.fireCooldown = 0.28;
     p.ammo -= 1;
     G.shotsFiredRecently = 1.5; // nearby pedestrians hear the shot and flee

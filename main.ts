@@ -39,3 +39,10 @@ writeFileSync(
     game_path_max_bytes: 1000,
   }),
 );
+
+// Report the finished entry so a local run shows at a glance whether the
+// dossier is under the scorer's size cap.
+const dossierPath = join(out, 'dossier.json');
+const dossierBytes = (await import('node:fs')).statSync(dossierPath).size;
+console.log(`dossier: ${dossierPath} (${dossierBytes} bytes)`);
+if (dossierBytes > 1450000) console.warn('WARNING: dossier over 1,450,000 bytes');

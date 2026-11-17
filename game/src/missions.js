@@ -164,7 +164,9 @@ function updateMission(G, dt) {
       G.missionMarker = { x: g.x, y: g.y, label: 'Next job: ' + missionById(next).name };
       const px = p.inCar ? p.inCar.x : p.x;
       const py = p.inCar ? p.inCar.y : p.y;
-      if (Math.hypot(px - g.x, py - g.y) < 70) startMission(G, next);
+      // Walk/drive up to the fixer to start the next job (50 px so the
+      // player spawning by the garage does not trigger it instantly).
+      if (Math.hypot(px - g.x, py - g.y) < 50) startMission(G, next);
     } else {
       G.missionMarker = null;
     }
@@ -206,12 +208,19 @@ function updateMission(G, dt) {
       G.missionMarker = { x: car.x, y: car.y, label: stage.label.replace('(0/3 hits)', `(${m.targetHits}/3 hits)`) };
       updateChaseTarget(G, car, dt);
       m.hitCooldown -= dt;
-      if (p.inCar && m.hitCooldown <= 0 && Math.hypot(p.inCar.x - car.x, p.inCar.y - car.y) < 48) {
-        const rel = Math.abs(p.inCar.speed - car.speed);
-        if (rel > 60) {
+      if (p.inCar && m.hitCooldown <= 0 && Math.hypot(p.inCar.x - car.x, p.inCar.y - car.y) < 70) {
+        // A ram is contact at speed. The old check (within 48 px AND a
+        // 60 px/s speed difference) almost never fired: the bump code keeps
+        // cars ~46 px apart, and a player tailing the courier at matched
+        // speed still drives INTO it — that is a ram.
+        if (Math.abs(p.inCar.speed) > 120) {
           m.targetHits++;
           m.hitCooldown = 1.0;
           car.speed *= 0.4;
+          // Each hit cripples the courier for good: its cruising speed
+          // drops, so the next hit is easier than the last. (Speed alone
+          // recovers in about a second, which made 3 hits nearly impossible.)
+          car.targetSpeed *= 0.55;
           car.damage = Math.min(100, car.damage + 30);
           toast(G, `Hit ${m.targetHits}/3!`);
           if (m.targetHits >= 3) { car.wrecked = true; done = true; }
@@ -234,13 +243,19 @@ function updateChaseTarget(G, car, dt) {
   // puts the most distance between the courier and the player.
   const target = car.nextNode != null ? nodePos(G.world, car.nextNode) : null;
   if (!target || Math.hypot(target.x - car.x, target.y - car.y) < 30) {
+    const prev = car.node;
     car.node = car.nextNode != null ? car.nextNode : nearestNode(G.world, car.x, car.y).id;
     let best = null, bestD = -1;
     for (const nb of nodeNeighbours(car.node)) {
+      // Do not reverse at an intersection: the courier keeps its flee run
+      // going straight, instead of zigzagging in one small loop the player
+      // can never close on. (A dead end still allows the reverse.)
+      if (nb === prev) continue;
       const np = nodePos(G.world, nb);
       const d = Math.hypot(np.x - px, np.y - py);
       if (d > bestD) { bestD = d; best = nb; }
     }
+    if (best == null) best = prev;
     car.nextNode = best;
     return;
   }

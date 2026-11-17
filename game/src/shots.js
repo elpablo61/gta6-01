@@ -1,7 +1,7 @@
 import { STEP } from './config.js';
-import { nearestNode, nodePos, bfsPath } from './world.js';
+import { nearestNode, nodePos, bfsPath, nearestRoadPoint } from './world.js';
 import { addWantedHeat } from './player.js';
-import { startMission, MISSION_ARC } from './missions.js';
+import { startMission, MISSION_ARC, resolveTarget } from './missions.js';
 import { updateTraffic } from './traffic.js';
 import { updatePedestrians } from './pedestrians.js';
 
@@ -155,7 +155,7 @@ function autopilotStep(G, name) {
     }
     if (car) { walkToward(G, car.x, car.y); return; }
   }
-  driveToward(G, 2700, G.world.roadY(10));
+  driveToward(G, 2700, G.world.roadY(10), 320, true);
 }
 
 function autopilotMission(G) {
@@ -169,7 +169,7 @@ function autopilotMission(G) {
       if (car && Math.hypot(car.x - p.x, car.y - p.y) < 60) { G.input.pressed.KeyE = true; return; }
       if (car) { walkToward(G, car.x, car.y); return; }
     }
-    driveToward(G, t.x - 60, t.y);
+    driveToward(G, t.x - 60, t.y, 320, true);
     return;
   }
   // Shootout stage: out of the car, aim at the nearest crew member.
@@ -185,21 +185,24 @@ function autopilotMission(G) {
   G.input.left = strafe; G.input.right = !strafe;
 }
 
+// Is a point on a road (within 45 px of a road centre line)? Used to prefer
+// parked cars the autopilot can actually drive away from.
+function isOnRoad(x, y) {
+  const rx = (x - 100) % 260, ry = (y - 100) % 260;
+  const dx = Math.min(rx, 260 - rx), dy = Math.min(ry, 260 - ry);
+  return dx < 45 || dy < 45;
+}
+
 function nearestParkedSports(G) {
   // Prefer a sports car parked ON a road (not one deep inside a parking-lot
   // block the autopilot cannot drive out of); fall back to the nearest
   // parked car of any type.
-  const onRoad = (x, y) => {
-    const rx = (x - 100) % 260, ry = (y - 100) % 260;
-    const dx = Math.min(rx, 260 - rx), dy = Math.min(ry, 260 - ry);
-    return dx < 45 || dy < 45;
-  };
   let best = null, bestD = 1e9, bestAny = null, bestAnyD = 1e9;
   for (const car of G.cars) {
     if (car.wrecked || !car.parked) continue;
     const d = Math.hypot(car.x - G.player.x, car.y - G.player.y);
-    if (onRoad(car.x, car.y) && d < bestAnyD) { bestAny = car; bestAnyD = d; }
-    if (car.type === 'sports' && onRoad(car.x, car.y) && d < bestD) { best = car; bestD = d; }
+    if (isOnRoad(car.x, car.y) && d < bestAnyD) { bestAny = car; bestAnyD = d; }
+    if (car.type === 'sports' && isOnRoad(car.x, car.y) && d < bestD) { best = car; bestD = d; }
   }
   if (best || bestAny) return best || bestAny;
   for (const car of G.cars) {
@@ -208,6 +211,35 @@ function nearestParkedSports(G) {
     if (d < bestAnyD) { bestAny = car; bestAnyD = d; }
   }
   return bestAny;
+}
+
+// For a chase: the nearest sports car on a road; failing that, the parked
+// car with the highest top speed (nearest on a tie) — the courier runs at
+// 448, so only a sports car (560) or a patrol car (520) can catch it.
+function nearestFastParked(G) {
+  const px = G.player.x, py = G.player.y;
+  let best = null, bestD = 1e9;
+  for (const car of G.cars) {
+    if (car.wrecked || !car.parked || car.type !== 'sports') continue;
+    if (!isOnRoad(car.x, car.y)) continue;
+    const d = Math.hypot(car.x - px, car.y - py);
+    if (d < bestD) { best = car; bestD = d; }
+  }
+  if (best) return best;
+  let bestTop = -1; bestD = 1e9; best = null;
+  for (const car of G.cars) {
+    if (car.wrecked || !car.parked || !isOnRoad(car.x, car.y)) continue;
+    const d = Math.hypot(car.x - px, car.y - py);
+    if (car.topSpeed > bestTop || (car.topSpeed === bestTop && d < bestD)) { best = car; bestTop = car.topSpeed; bestD = d; }
+  }
+  if (best) return best;
+  bestTop = -1; bestD = 1e9; best = null;
+  for (const car of G.cars) {
+    if (car.wrecked || !car.parked) continue;
+    const d = Math.hypot(car.x - px, car.y - py);
+    if (car.topSpeed > bestTop || (car.topSpeed === bestTop && d < bestD)) { best = car; bestTop = car.topSpeed; bestD = d; }
+  }
+  return best;
 }
 
 function nearestEnemy(G) {
@@ -220,8 +252,39 @@ function nearestEnemy(G) {
   return best;
 }
 
+// Walk on foot toward a point. The route follows the road graph to the
+// target's nearest road point, and only the final leg walks straight at the
+// target — so the player approaches a parking-lot car from the road, not
+// straight through the block it sits in (which used to oscillate against a
+// building forever when player and car shared a node).
 function walkToward(G, tx, ty) {
   const p = G.player;
+  const rp = nearestRoadPoint(G.world, tx, ty).point;
+  // Final leg: at the road point, the target is a short straight walk
+  // through the open parking lot.
+  if (Math.hypot(rp.x - p.x, rp.y - p.y) < 40) { walkDirect(G, tx, ty); return; }
+  const to = nearestNode(G.world, rp.x, rp.y).id;
+  if (!G.walkPath || G.walkTarget !== to || G.walkDestX !== tx || G.walkDestY !== ty) {
+    const from = nearestNode(G.world, p.x, p.y).id;
+    G.walkPath = bfsPath(from, to);
+    G.walkI = 1;
+    G.walkTarget = to;
+    G.walkDestX = tx; G.walkDestY = ty;
+  }
+  // Waypoints: the BFS nodes, then the road point itself as the last hop.
+  const n = G.walkPath.length;
+  let wp = G.walkI < n - 1 ? nodePos(G.world, G.walkPath[G.walkI]) : rp;
+  if (Math.hypot(wp.x - p.x, wp.y - p.y) < 40 && G.walkI < n - 1) {
+    G.walkI++;
+    wp = nodePos(G.world, G.walkPath[Math.min(G.walkI, n - 1)]);
+  }
+  walkDirect(G, wp.x, wp.y);
+}
+
+// Walk straight at a point, sidestepping for a second when a building blocks
+// the way. Used for the final leg, where the target may sit slightly off a
+// road (a parked car in a lot, an enemy on a sidewalk).
+function walkDirect(G, tx, ty) {  const p = G.player;
   const dx = tx - p.x, dy = ty - p.y;
   const inp = G.input;
   // If blocked by a building, sidestep perpendicular for a second instead
@@ -248,7 +311,13 @@ function walkToward(G, tx, ty) {
 // Drive the player's car toward a point using the road graph. The path is
 // kept across steps (recomputed only for a new target) so the waypoint never
 // flips behind the car mid-turn; the car slows for turns and caps its speed.
-function driveToward(G, tx, ty) {
+// `cruise` is the autopilot's top cruising speed (default 320, a safe speed
+// for the road graph; a chase passes 520 to outrun the courier's 448).
+// `exact` means the target is a fixed point (a landmark): on the final node
+// the car heads for the point itself, not the node. It must stay false for
+// a moving target (the courier) — steering at a moving point on the last
+// node makes the car spin instead of following the road graph.
+function driveToward(G, tx, ty, cruise = 320, exact = false) {
   const p = G.player;
   const car = p.inCar;
   const inp = G.input;
@@ -267,6 +336,14 @@ function driveToward(G, tx, ty) {
     G.autoI++;
     wp = nodePos(G.world, G.autoPath[Math.min(G.autoI, G.autoPath.length - 1)]);
   }
+  // On the final node, head for the actual target, not the node itself —
+  // but only for a fixed point. A landmark can sit ~100 px past the last
+  // intersection (the marina is on the sand east of it), and targeting the
+  // node strands the car there oscillating around it forever.
+  if (exact && G.autoI >= G.autoPath.length - 1
+    && Math.hypot(wp.x - car.x, wp.y - car.y) < 70) {
+    wp = { x: tx, y: ty };
+  }
   const want = Math.atan2(wp.y - car.y, wp.x - car.x);
   let diff = want - car.angle;
   while (diff > Math.PI) diff -= Math.PI * 2;
@@ -284,15 +361,125 @@ function driveToward(G, tx, ty) {
   } else {
     G.stuckAcc = 0;
   }
+  steerCarToward(G, wp.x, wp.y, cruise);
+}
+
+export { runShot, SHOT_STEPS, autopilotStep, driveToward, walkToward, missionAutopilot };
+
+// Generic mission driver for playtests (not a pose): completes whatever
+// mission is active by following its stages — drive to the target, ram the
+// courier, shoot the crew, or lose the cops via the Spray Shop. Used by the
+// automated playtest to prove every shipped mission finishes end-to-end.
+function missionAutopilot(G) {
+  const inp = G.input;
+  const p = G.player;
+  inp.up = inp.down = inp.left = inp.right = false;
+  inp.sprint = false; inp.handbrake = false; inp.fire = false;
+  const m = G.mission;
+  if (!m || !m.active) {
+    // No mission: drive to Vera's garage to pick up the next job.
+    const g = G.world.landmarks.fixerGarage;
+    if (!p.inCar) {
+      const car = nearestParkedSports(G);
+      if (car && Math.hypot(car.x - p.x, car.y - p.y) < 60) { inp.pressed.KeyE = true; return; }
+      if (car) { walkToward(G, car.x, car.y); return; }
+    }
+    driveToward(G, g.x, g.y, 320, true);
+    return;
+  }
+  const stage = m.def.stages[m.stageI];
+  if (!stage) return;
+  if (stage.kind === 'shootout') {
+    if (p.inCar) { inp.pressed.KeyE = true; return; }
+    const e = nearestEnemy(G);
+    if (!e) return;
+    const cam = G.camera;
+    inp.mouseX = e.x - cam.x;
+    inp.mouseY = e.y - cam.y;
+    inp.fire = true;
+    const strafe = Math.sin(G.time * 2) > 0;
+    inp.left = strafe; inp.right = !strafe;
+    return;
+  }
+  if (stage.kind === 'escape') {
+    // Lose the heat at the Spray Shop (a repaint clears the wanted level).
+    const s = G.world.landmarks.sprayShop;
+    if (!p.inCar) {
+      const car = nearestParkedSports(G);
+      if (car && Math.hypot(car.x - p.x, car.y - p.y) < 60) { inp.pressed.KeyE = true; return; }
+      if (car) { walkToward(G, car.x, car.y); return; }
+      return;
+    }
+    if (p.cash < 50) {
+      // Broke: hide instead — drive to the far corner and lay low.
+      driveToward(G, 620, 620, 320, true);
+      return;
+    }
+    driveToward(G, s.x, s.y, 320, true);
+    return;
+  }
+  if (stage.kind === 'chase') {
+    const car = m.targetCar;
+    if (!car) return;
+    // A chase needs a fast car: a truck (330) or sedan (430) can never
+    // catch a courier running at 448. Ditch a slow car when a faster one
+    // is parked somewhere — but keep it if it is the best available, or
+    // the driver would exit and re-enter the same car forever.
+    if (p.inCar && p.inCar.topSpeed < 480) {
+      const faster = nearestFastParked(G);
+      if (faster && faster.topSpeed > p.inCar.topSpeed + 40) { inp.pressed.KeyE = true; return; }
+    }
+    if (!p.inCar) {
+      const pc = nearestFastParked(G);
+      if (pc && Math.hypot(pc.x - p.x, pc.y - p.y) < 60) { inp.pressed.KeyE = true; return; }
+      if (pc) { walkToward(G, pc.x, pc.y); return; }
+      return;
+    }
+    // Close in: steer straight at the courier only when it is roughly
+    // ahead (a ram run); otherwise stay on the road graph, or the car cuts
+    // a corner through a building, loses all speed, and spins in place.
+    // Cruise at 520: the courier runs at 448, so the default 320 cruise
+    // could never catch it.
+    const d = Math.hypot(car.x - p.inCar.x, car.y - p.inCar.y);
+    if (d < 150) {
+      const want = Math.atan2(car.y - p.inCar.y, car.x - p.inCar.x);
+      let diff = want - p.inCar.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      if (Math.abs(diff) < 0.6) steerCarToward(G, car.x, car.y, 520);
+      else driveToward(G, car.x, car.y, 520);
+    } else {
+      driveToward(G, car.x, car.y, 520);
+    }
+    return;
+  }
+  // driveTo / pickup / timed: drive to the stage target on the road graph.
+  const t = resolveTarget(G, stage.at);
+  if (!p.inCar) {
+    const car = nearestParkedSports(G);
+    if (car && Math.hypot(car.x - p.x, car.y - p.y) < 60) { inp.pressed.KeyE = true; return; }
+    if (car) { walkToward(G, car.x, car.y); return; }
+  }
+  driveToward(G, t.x, t.y, 320, true);
+}
+
+// Steer the player's car toward a point: throttle, brake for sharp turns,
+// handbrake when very sideways. Shared by driveToward and the chase driver.
+// `cruise` caps the speed the autopilot holds on a straight (default 320).
+function steerCarToward(G, wx, wy, cruise = 320) {
+  const car = G.player.inCar;
+  const inp = G.input;
+  if (!car) return;
+  const want = Math.atan2(wy - car.y, wx - car.x);
+  let diff = want - car.angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
   if (Math.abs(diff) > 0.9) {
     inp.down = Math.abs(car.speed) > 60;
     inp.handbrake = Math.abs(car.speed) > 200;
   } else {
-    // Cap the autopilot's speed so turns stay on the road.
-    inp.up = Math.abs(car.speed) < 300;
+    inp.up = Math.abs(car.speed) < cruise;
   }
   inp.left = diff > 0.12;
   inp.right = diff < -0.12;
 }
-
-export { runShot, SHOT_STEPS, autopilotStep, driveToward, walkToward };

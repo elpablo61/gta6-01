@@ -21,7 +21,7 @@ import {
 } from './missions.js';
 import { saveGame, loadGame, autosave, clearSave } from './save.js';
 import { render } from './render.js';
-import { runShot } from './shots.js';
+import { runShot, missionAutopilot } from './shots.js';
 
 // Crescent Bay — a complete top-down 2D open-world crime game.
 // Fixed-timestep loop (1/60 s), deterministic seeded city, DOM menus over a
@@ -55,7 +55,7 @@ const G = {
   save: { missionsDone: [] },
   debug: params.has('debug'), fps: 60, frameMs: 0,
   shotsFiredRecently: 0, muzzle: null, muzzleEnemy: null,
-  shotMode: false, stuckT: 0, stuckAcc: 0,
+  shotMode: false, stuckT: 0, stuckAcc: 0, autoplay: params.has('autoplay'),
   lightCanvas: null,
 };
 
@@ -88,19 +88,31 @@ function update(dt) {
     // The city stays alive behind the title screen.
     updateTraffic(G, dt);
     updatePedestrians(G, dt);
+    G.input.pressed = {};
     return;
   }
-  if (G.state !== 'playing') return;
+  // Pause toggle must run before the playing-only early return, or Esc can
+  // pause the game but never resume it.
+  if ((G.input.pressed.Escape || G.input.pressed.KeyP)
+    && (G.state === 'playing' || G.state === 'paused')) {
+    togglePause();
+    G.input.pressed = {};
+  }
+  if (G.state !== 'playing') { G.input.pressed = {}; return; }
+  // Playtest autoplay (set via ?autoplay=1 or window.__cb): the driver
+  // overwrites the inputs each step, like the shot autopilot does.
+  if (G.autoplay) missionAutopilot(G);
   // Edge-triggered keys, consumed once per step.
   const pressed = G.input.pressed;
   if (pressed.KeyE || pressed.Enter) {
     if (G.dialogue) advanceDialogue(G);
     else tryEnterExitCar(G);
   }
-  if (pressed.Escape || pressed.KeyP) togglePause();
   if (pressed.F3) { G.debug = !G.debug; }
   if (pressed.KeyM) { if (saveGame(G)) toast(G, 'Game saved.'); }
-  G.input.pressed = {};
+  // NOTE: do NOT reset `pressed` here — updatePlayerOnFoot reads the
+  // Mouse0 edge flag below, and resetting first would discard it every step
+  // (a quick click would never fire a shot). The reset is at the end.
   // The Spray Shop: drive in with $50+ and a wanted level to lose the heat.
   const p = G.player;
   if (p.inCar && G.wanted.stars > 0) {
@@ -124,6 +136,10 @@ function update(dt) {
   updateParticles(G, dt);
   updatePickups(G, dt);
   G.shotsFiredRecently = Math.max(0, G.shotsFiredRecently - dt);
+  // Edge-triggered keys are consumed once per step; clear them only now,
+  // after every consumer (including the Mouse0 shot in updatePlayerOnFoot)
+  // has read this step's object.
+  G.input.pressed = {};
   // Car-vs-car bumps: the player's car shoves traffic (and takes damage).
   // NOTE: damageVehicle can wreck the player's car and bail the player out
   // (inCar -> null), so re-check inCar on every iteration. Bump damage is
@@ -296,9 +312,10 @@ function frame(now) {
 
 // Test + autopilot hooks (used by Playwright playtests; harmless in play).
 window.__cb = {
-  G, startMission, startNewGame, continueGame, saveGame, loadGame,
-  addWantedHeat, pressKey: (code) => pressKey(G.input, code),
+  G, startMission: (id) => startMission(G, id), startNewGame, continueGame, saveGame, loadGame,
+  addWantedHeat: (n) => addWantedHeat(G, n), pressKey: (code) => pressKey(G.input, code),
   setInput: (patch) => Object.assign(G.input, patch),
+  setAutoplay: (v) => { G.autoplay = !!v; },
   missionArc: MISSION_ARC,
 };
 

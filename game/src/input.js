@@ -34,7 +34,12 @@ function createInput(canvas) {
     input.mouseX = e.clientX - r.left; input.mouseY = e.clientY - r.top;
   });
   canvas.addEventListener('mousedown', (e) => {
-    if (e.button === 0) { input.mouseDown = true; input.fire = true; }
+    if (e.button === 0) {
+      input.mouseDown = true; input.fire = true;
+      // Edge-triggered too: a fast click must register a shot even if the
+      // button is released before the next frame reads `fire`.
+      input.pressed.Mouse0 = true;
+    }
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) { input.mouseDown = false; input.fire = false; }
