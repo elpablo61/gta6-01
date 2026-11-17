@@ -1,7 +1,7 @@
 // Take the four screenshots (1280x800, JPEG) from the game's own poses:
 // each ?shot= plays from a fresh seeded world with the autopilot driving,
 // waits for full renders, asserts zero console errors, and saves the shot.
-import { chromium } from 'playwright';
+import { chromium } from 'playwright-core';
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +32,7 @@ try {
     page.on('pageerror', (err) => errors.push(err.message));
     await page.goto(BASE + '/' + shot.query, { waitUntil: 'domcontentloaded' });
     // Let the pose's autopilot drive and the scene settle, fonts ready.
-    await sleep(4200);
+    await sleep(shot.waitMs || 4200);
     const path = join(ROOT, 'screenshots', shot.name);
     await page.screenshot({ path, type: 'jpeg', quality: 85 });
     const mode = await page.evaluate(() => window.__game.state.mode);

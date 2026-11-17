@@ -6,7 +6,7 @@
 //         pause/resume/save/reload/Continue, corrupt save.
 //   arc:  all eight missions end to end by autopilot, per-mission timing.
 //   fps:  frames per second during a wanted chase.
-import { chromium } from 'playwright';
+import { chromium } from 'playwright-core';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -67,6 +67,11 @@ async function modeCold(browser) {
   await page.keyboard.up('KeyW');
   const p1 = await page.evaluate(() => ({ x: window.__game.state.player.x, y: window.__game.state.player.y }));
   total++; if (check(errors, 'player moves on foot', Math.hypot(p1.x - p0.x, p1.y - p0.y) > 50, Math.round(Math.hypot(p1.x - p0.x, p1.y - p0.y)) + 'px')) pass++;
+  await page.evaluate(() => {
+    const s = window.__game.state;
+    const car = s.cars.find((c) => c.type === 'sports' && c.role === 'parked');
+    s.player.x = car.x; s.player.y = car.y;
+  });
   await page.keyboard.press('KeyE');
   await sleep(400);
   total++; if (check(errors, 'enter the sports car', await page.evaluate(() => !!window.__game.state.playerCar))) pass++;

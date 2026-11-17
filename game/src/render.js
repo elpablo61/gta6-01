@@ -12,8 +12,8 @@ export function renderWorld(state, ctx, view) {
   const w = view.w; const h = view.h;
   const focusX = state.playerCar ? state.playerCar.x : state.player.x;
   const focusY = state.playerCar ? state.playerCar.y : state.player.y;
-  cam.x += (focusX - cam.x) * 0.12;
-  cam.y += (focusY - cam.y) * 0.12;
+  cam.x += (focusX - cam.x) * 0.2;
+  cam.y += (focusY - cam.y) * 0.2;
   const scale = cam.zoom;
   ctx.save();
   ctx.clearRect(0, 0, w, h);

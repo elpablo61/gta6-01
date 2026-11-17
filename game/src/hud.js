@@ -78,21 +78,22 @@ export function drawHud(state, ctx, view) {
     ctx.fillText(state.flashText, w / 2, 80);
   }
 
-  // Fixer dialogue box, bottom-centre.
+  // Fixer dialogue box, bottom-centre, above the objective banner.
   if (state.mission && state.mission.dialogue && state.time < state.mission.dialogueUntil) {
-    const lines = wrapText(ctx, state.mission.dialogue, w - 360);
-    const boxH = 34 + lines.length * 26;
+    const lines = wrapText(ctx, state.mission.dialogue, 580);
+    const boxH = 52 + lines.length * 26;
+    const boxTop = h - 190 - boxH;
     ctx.fillStyle = 'rgba(8,10,18,0.88)';
-    ctx.fillRect(w / 2 - 320, h - 190, 640, boxH);
+    ctx.fillRect(w / 2 - 320, boxTop, 640, boxH);
     ctx.strokeStyle = '#ffd94d'; ctx.lineWidth = 3;
-    ctx.strokeRect(w / 2 - 320, h - 190, 640, boxH);
+    ctx.strokeRect(w / 2 - 320, boxTop, 640, boxH);
     ctx.font = 'bold 20px system-ui, sans-serif';
     ctx.fillStyle = '#ffd94d';
     ctx.textAlign = 'left';
-    ctx.fillText(state.mission.def.fixer + '  •  ' + state.mission.def.name, w / 2 - 300, h - 190 + 30);
+    ctx.fillText(state.mission.def.fixer + '  •  ' + state.mission.def.name, w / 2 - 300, boxTop + 30);
     ctx.font = '20px system-ui, sans-serif';
     ctx.fillStyle = '#ffffff';
-    lines.forEach((line, i) => ctx.fillText(line, w / 2 - 300, h - 190 + 62 + i * 26));
+    lines.forEach((line, i) => ctx.fillText(line, w / 2 - 300, boxTop + 62 + i * 26));
   }
 
   // FPS + debug overlay (toggle with F3 in the main loop).

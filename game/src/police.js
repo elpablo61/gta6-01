@@ -24,13 +24,18 @@ export function updateWantedHeat(state, dt) {
     const d = Math.hypot(cop.x - px, cop.y - py);
     if (d < nearestCop) nearestCop = d;
   }
-  if (inGarage || inGarageCar) {
-    state.wantedHeat = Math.max(0, state.wantedHeat - HEAT_DECAY_GARAGE_PER_SEC * dt);
-    if (state.wantedHeat === 0 && state.wantedStars > 0) state.flashMessage('Clean — the heat is off you.', 2.5);
-  } else if (nearestCop > 520 && state.wantedHeat > 0) {
-    state.wantedHeat = Math.max(0, state.wantedHeat - HEAT_DECAY_HIDDEN_PER_SEC * dt);
-  } else if (state.wantedHeat > 0 && state.time - state.lastCrimeAt > 6) {
-    state.wantedHeat = Math.max(0, state.wantedHeat - HEAT_DECAY_PER_SEC * dt);
+  // Screenshot poses hold their heat steady so the stars on screen match
+  // the pose's wanted level instead of bleeding away before the shot.
+  const heatHeld = state.time < (state.holdHeatUntil || 0);
+  if (!heatHeld) {
+    if (inGarage || inGarageCar) {
+      state.wantedHeat = Math.max(0, state.wantedHeat - HEAT_DECAY_GARAGE_PER_SEC * dt);
+      if (state.wantedHeat === 0 && state.wantedStars > 0) state.flashMessage('Clean — the heat is off you.', 2.5);
+    } else if (nearestCop > 520 && state.wantedHeat > 0) {
+      state.wantedHeat = Math.max(0, state.wantedHeat - HEAT_DECAY_HIDDEN_PER_SEC * dt);
+    } else if (state.wantedHeat > 0 && state.time - state.lastCrimeAt > 6) {
+      state.wantedHeat = Math.max(0, state.wantedHeat - HEAT_DECAY_PER_SEC * dt);
+    }
   }
   state.wantedStars = starsForHeat(state.wantedHeat);
 }

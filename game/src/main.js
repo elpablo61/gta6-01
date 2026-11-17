@@ -375,7 +375,22 @@ function update(state, dt) {
     const steer = (move.left ? -1 : 0) + (move.right ? 1 : 0);
     const throttle = (move.up ? 1 : 0) + (move.down ? -1 : 0);
     const before = car.speed;
+    const angleBefore = car.angle;
     driveCar(state, car, dt, throttle, steer, move.handbrake);
+    // Hard cornering at speed leaves a skid trail; fast driving puffs
+    // exhaust smoke — both freeze visibly in a still frame.
+    const angleDelta = Math.abs(car.angle - angleBefore);
+    if (angleDelta > 0.012 && Math.abs(car.speed) > 240 && state.time - (state.lastSkidAt || 0) > 0.1) {
+      state.lastSkidAt = state.time;
+      state.addSkid(car.x, car.y, car.angle);
+    }
+    if (Math.abs(car.speed) > 320 && Math.random() < dt * 6) {
+      state.particles.push({
+        x: car.x - Math.cos(car.angle) * car.length * 0.5,
+        y: car.y - Math.sin(car.angle) * car.length * 0.5,
+        vx: 0, vy: -18, life: 0.8, maxLife: 0.8, size: 6, kind: 'smoke', color: '#999999',
+      });
+    }
     if (Math.abs(before) > 220 && move.handbrake && state.time - (state.lastSkidAt || 0) > 0.12) {
       state.lastSkidAt = state.time;
       state.addSkid(car.x, car.y, car.angle);

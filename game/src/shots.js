@@ -77,12 +77,15 @@ function seedSkidsAndSmoke(state, car) {
 
 function applyCover(state) {
   state.timeOfDay = 10.5;
+  state.holdHeatUntil = state.time + 30;
   startMission(state, 6);
   state.mission.objective = 'ESCAPE THE POLICE — Lose the cops';
-  const car = putPlayerInCar(state, -400, 400, -Math.PI / 4, 'sports');
+  // East along the y=400 road so the patrol cars spawn on the same road,
+  // directly behind the player, and the chase reads in one frame.
+  const car = putPlayerInCar(state, -400, 400, 0, 'sports');
   car.speed = 300;
   setWantedHeat(state, 62);
-  spawnPoliceBehind(state, -400, 400, -Math.PI / 4, 2);
+  spawnPoliceBehind(state, -400, 400, 0, 2);
   spawnTrafficNear(state, -400, 400);
   seedSkidsAndSmoke(state, car);
   return { autopilot: true, cruise: 420 };
@@ -90,6 +93,7 @@ function applyCover(state) {
 
 function applyMissionShot(state) {
   state.timeOfDay = 11;
+  state.holdHeatUntil = state.time + 30;
   startMission(state, 7);
   // Rook on foot at the dock, pistol out, fixer dialogue on screen.
   state.playerCar = null;
@@ -115,6 +119,7 @@ function applyMissionShot(state) {
 
 function applyNight(state) {
   state.timeOfDay = 22.3;
+  state.holdHeatUntil = state.time + 30;
   startMission(state, 4);
   const car = putPlayerInCar(state, 0, 800, -Math.PI / 2, 'sports');
   car.color = '#d92b2b';
