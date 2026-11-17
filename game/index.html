@@ -3,17 +3,88 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<link rel="icon" href="data:,">
+<title>Crescent Bay — an open-world crime game</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #10131a;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
+  .hidden { display: none !important; }
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(8, 10, 18, 0.55); z-index: 10; }
+  .panel { background: rgba(12, 16, 26, 0.92); border: 2px solid #ffd21f; border-radius: 12px;
+    padding: 28px 34px; max-width: 560px; color: #f2f4f6; box-shadow: 0 12px 48px rgba(0,0,0,0.6); }
+  .panel h1 { margin: 0 0 4px; font-size: 54px; letter-spacing: 4px; color: #ffd21f;
+    text-shadow: 0 3px 0 #7a5c00, 0 6px 18px rgba(0,0,0,0.7); }
+  .panel h2 { margin: 0 0 12px; font-size: 30px; color: #ffd21f; }
+  .tagline { margin: 0 0 16px; font-size: 17px; color: #c8d2de; }
+  .features { margin: 0 0 18px; font-size: 15px; color: #9fe8a9; }
+  .btn { display: block; width: 100%; margin: 8px 0; padding: 13px 18px; font-size: 19px; font-weight: 700;
+    color: #10131a; background: #ffd21f; border: none; border-radius: 8px; cursor: pointer; }
+  .btn:hover { background: #ffe14d; }
+  .btn.secondary { background: #2c3646; color: #f2f4f6; }
+  .btn.secondary:hover { background: #3a475c; }
+  #controls-list { font-size: 14px; line-height: 1.7; color: #c8d2de; margin: 12px 0; columns: 2; }
+  #mission-select { font-size: 14px; line-height: 1.7; color: #c8d2de; margin: 8px 0 0; padding-left: 18px; }
+  #save-slot { font-size: 14px; color: #9fe8a9; margin: 10px 0 0; }
+  #dialogue-box { position: fixed; left: 50%; bottom: 110px; transform: translateX(-50%); z-index: 8;
+    width: min(680px, 86vw); background: rgba(10, 14, 24, 0.92); border: 2px solid #ffd21f;
+    border-radius: 10px; padding: 14px 18px; color: #f2f4f6; cursor: pointer; }
+  #dialogue-name { color: #ffd21f; font-weight: 800; font-size: 16px; margin-bottom: 4px; }
+  #dialogue-text { font-size: 18px; line-height: 1.45; }
+  .dialogue-hint { margin-top: 6px; font-size: 12px; color: #8a97a8; }
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="game" aria-label="Crescent Bay: drive, steal cars, outrun the police and run jobs for Vera Cross"></canvas>
 <p id="status" role="status" aria-live="polite"></p>
+
+<div id="dialogue-box" class="hidden">
+  <div id="dialogue-name">Vera Cross</div>
+  <div id="dialogue-text"></div>
+  <div class="dialogue-hint">Click or press E to continue</div>
+</div>
+
+<div id="title-screen" class="overlay">
+  <div class="panel">
+    <h1>CRESCENT BAY</h1>
+    <p class="tagline">An open-world crime game. Steal any car, outrun the cops, run jobs for Vera Cross — and take the city.</p>
+    <p class="features">8 missions • Wanted 1–5 stars • Traffic &amp; pedestrians • Steal any car • Day &amp; night • Save game</p>
+    <button id="btn-new-game" class="btn">▶ New Game</button>
+    <button id="btn-continue" class="btn secondary hidden">↻ Continue</button>
+    <p id="save-slot"></p>
+    <ul id="controls-list">
+      <li>WASD / arrows — move &amp; drive</li>
+      <li>Mouse — aim, click — shoot</li>
+      <li>E — enter / exit car</li>
+      <li>Shift — sprint</li>
+      <li>Space — handbrake</li>
+      <li>Esc / P — pause &nbsp;·&nbsp; M — save</li>
+    </ul>
+    <ul id="mission-select"></ul>
+  </div>
+</div>
+
+<div id="pause-menu" class="overlay hidden">
+  <div class="panel">
+    <h2>Paused</h2>
+    <p class="tagline">Crescent Bay waits for no one — except right now.</p>
+    <button id="btn-resume" class="btn">▶ Resume</button>
+    <button id="btn-save" class="btn secondary">💾 Save game</button>
+    <button id="btn-quit-title" class="btn secondary">🏠 Quit to title</button>
+  </div>
+</div>
+
+<div id="game-over-screen" class="overlay hidden">
+  <div class="panel">
+    <h2 id="game-over-title">CAUGHT</h2>
+    <p class="tagline" id="game-over-sub"></p>
+    <button id="btn-respawn" class="btn">↻ Back on the street</button>
+    <button id="btn-gameover-title" class="btn secondary">🏠 Title screen</button>
+  </div>
+</div>
+
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
