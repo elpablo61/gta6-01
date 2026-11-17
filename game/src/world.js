@@ -112,7 +112,10 @@ export function nearestRoadPoint(world, x, y) {
 export function findRoute(world, from, to) {
   const start = nearestNode(world, from.x, from.y);
   const goal = nearestNode(world, to.x, to.y);
-  if (start === goal) return [goal];
+  // Already at the goal node: an empty route, so callers fall through to
+  // their final leg (drive straight at the exact point) instead of
+  // steering at the node they are already standing on forever.
+  if (start === goal) return [];
   const prev = new Map();
   const queue = [start];
   prev.set(nodeKey(start.x, start.y), null);

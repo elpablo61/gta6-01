@@ -316,7 +316,7 @@ function driveToward(state, v, tx, ty, cruise, isStatic) {
   if (state.autoRoute && state.autoRouteIndex < state.autoRoute.length) {
     const wp = state.autoRoute[state.autoRouteIndex];
     wx = wp.x; wy = wp.y;
-    if (Math.hypot(wp.x - car.x, wp.y - car.y) < 34) state.autoRouteIndex++;
+    if (Math.hypot(wp.x - car.x, wp.y - car.y) < 55) state.autoRouteIndex++;
   } else if (isStatic && Math.hypot(tx - car.x, ty - car.y) < 220) {
     // Final leg straight to the exact point — static landmarks only, and
     // only when close. A first version drove straight at any target once
@@ -332,6 +332,7 @@ function driveToward(state, v, tx, ty, cruise, isStatic) {
   }
   const dx = wx - car.x; const dy = wy - car.y;
   const dist = Math.hypot(dx, dy);
+  state.autoWaypoint = { x: wx, y: wy };
   const want = Math.atan2(dy, dx);
   let diff = want - car.angle;
   while (diff > Math.PI) diff -= Math.PI * 2;
@@ -342,6 +343,15 @@ function driveToward(state, v, tx, ty, cruise, isStatic) {
   // Sharp turn ahead: brake hard instead of overshooting the junction
   // and cutting across the block behind it.
   if (Math.abs(diff) > 1.2 && Math.abs(car.speed) > 150) { v.up = false; v.down = true; }
+  // Slow down for the waypoint itself. At full speed the car's minimum
+  // turning radius (~48px) is wider than the arrival radius, so it falls
+  // into a stable orbit around the node and never arrives. Capping speed
+  // by distance shrinks the turning radius below the arrival radius and
+  // the car spirals in. (Chase targets are exempt: ramming needs speed.)
+  if (isStatic) {
+    const wantSpeed = Math.min(cruise, Math.max(70, dist * 1.1));
+    if (car.speed > wantSpeed) v.up = false;
+  }
   v.left = diff < -0.08;
   v.right = diff > 0.08;
   // Slow for the car ahead.

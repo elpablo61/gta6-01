@@ -101,6 +101,8 @@ function applyMissionShot(state) {
   state.player.x = -1180; state.player.y = -560;
   state.player.ammo = 60;
   state.camera.x = -1180; state.camera.y = -560;
+  // Closer camera for the shootout pose: the fight reads at a glance.
+  state.camera.zoom = 1.25;
   state.mission.dialogueUntil = state.time + 30;
   setWantedHeat(state, 20);
   const target = state.enemies.find((e) => e.health > 0);
