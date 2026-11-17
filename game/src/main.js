@@ -223,6 +223,21 @@ function computeAutopilot(state) {
   let isStatic = true;
   let cruise = state.autoCruise || 420;
 
+  // Off-road recovery: a car that cut a corner into a building pocket
+  // must drive back to the nearest road before resuming the route, or it
+  // pushes at the same wall forever. Exempt when the mission target
+  // itself is a close static landmark (marina/docks on the beach).
+  if (state.playerCar && !isOnRoad(state.playerCar.x, state.playerCar.y)) {
+    const cur = m ? (m.def.type === 'chase' && state.courier ? { x: state.courier.x, y: state.courier.y }
+      : m.def.targets[m.targetIndex]) : state.missionMarker;
+    const cd = cur ? Math.hypot(cur.x - state.playerCar.x, cur.y - state.playerCar.y) : 9999;
+    if (cd >= 220) {
+      const rp = nearestRoadPoint(state.world, state.playerCar.x, state.playerCar.y);
+      driveToward(state, v, rp.x, rp.y, 200, true);
+      return v;
+    }
+  }
+
   if (m && m.def.type === 'shootout' && m.stage === 0) {
     const alive = state.enemies.filter((e) => e.health > 0);
     if (alive.length) {
@@ -394,7 +409,7 @@ function update(state, dt) {
     if (state.autoplay) {
       if (Math.abs(car.speed) < 25 && throttle !== 0) state.stuckTime = (state.stuckTime || 0) + dt;
       else state.stuckTime = 0;
-      if (state.stuckTime > 2) { state.unstuckUntil = state.time + 0.9; state.stuckTime = 0; }
+      if (state.stuckTime > 2) { state.unstuckUntil = state.time + 1.2; state.stuckTime = 0; }
       if (state.time < (state.unstuckUntil || 0)) { throttle = -1; steerNow = -steer; }
     }
     const before = car.speed;
