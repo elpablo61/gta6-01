@@ -32,7 +32,7 @@ function createGameState(seed) {
     rng: makeRng(seed),
     time: 0, timeOfDay: 10,
     mode: 'title',
-    player: createPlayer(0, 200),
+    player: createPlayer(0, 0),
     playerCar: null,
     cars: [], peds: [], cops: [], policeCars: [],
     bullets: [], particles: [], skids: [], enemies: [], pickups: [],
@@ -75,15 +75,15 @@ const input = createInput(canvas);
 
 spawnParkedCars(state, 14);
 // A sports car near the start so the first job is fun immediately.
-const starterCar = makeCar('sports', 60, 200, 0, 'parked');
+const starterCar = makeCar('sports', 60, 0, 0, 'parked');
 starterCar.color = '#e8b400';
 state.cars.push(starterCar);
 // A few pickups scattered on roads.
 state.pickups.push(
-  { x: 400, y: -200, kind: 'health' },
-  { x: -400, y: 600, kind: 'ammo' },
-  { x: 800, y: 200, kind: 'health' },
-  { x: -800, y: -200, kind: 'ammo' },
+  { x: 400, y: 0, kind: 'health' },
+  { x: -400, y: 800, kind: 'ammo' },
+  { x: 800, y: 400, kind: 'health' },
+  { x: -800, y: -400, kind: 'ammo' },
 );
 
 // ---- DOM menus (ids are the semantic hooks the outline shows) ----
@@ -119,12 +119,12 @@ function startNewGame() {
   state.autosave = fresh.autosave;
   state.addSkid = fresh.addSkid;
   spawnParkedCars(state, 14);
-  const sc = makeCar('sports', 60, 200, 0, 'parked');
+  const sc = makeCar('sports', 60, 0, 0, 'parked');
   sc.color = '#e8b400';
   state.cars.push(sc);
   state.pickups.push(
-    { x: 400, y: -200, kind: 'health' },
-    { x: -400, y: 600, kind: 'ammo' },
+    { x: 400, y: 0, kind: 'health' },
+    { x: -400, y: 800, kind: 'ammo' },
   );
   state.mode = 'playing';
   showOnly(null);
@@ -153,7 +153,7 @@ function respawn() {
   const p = state.player;
   p.health = PLAYER_MAX_HEALTH;
   p.cash = Math.max(0, p.cash - 200);
-  p.x = 0; p.y = 200;
+  p.x = 0; p.y = 0;
   if (state.playerCar) { state.playerCar = null; p.inCar = null; }
   state.wantedHeat = 0; state.wantedStars = 0;
   state.cops = []; state.enemies = [];
@@ -339,6 +339,9 @@ function driveToward(state, v, tx, ty, cruise, isStatic) {
   v.up = true;
   if (Math.abs(diff) > 2.2 && Math.abs(car.speed) > 260) { v.handbrake = true; v.up = false; }
   if (Math.abs(diff) > 0.9 && Math.abs(car.speed) > 320) v.up = false;
+  // Sharp turn ahead: brake hard instead of overshooting the junction
+  // and cutting across the block behind it.
+  if (Math.abs(diff) > 1.2 && Math.abs(car.speed) > 150) { v.up = false; v.down = true; }
   v.left = diff < -0.08;
   v.right = diff > 0.08;
   // Slow for the car ahead.
