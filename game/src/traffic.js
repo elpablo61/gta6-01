@@ -1,86 +1,74 @@
-import { TRAFFIC_TARGET, DESPAWN_DIST, SPAWN_DIST, ROAD_SPACING, GRID_N } from './config.js';
-import { nearestNode, nodePos, nodeNeighbours, collideCircle } from './world.js';
-import { createVehicle } from './vehicles.js';
-import { playerPos } from './player.js';
+import { makeRng, pick, range } from './random.js';
+import { makeCar, driveCar, carAheadDistance } from './vehicles.js';
+import { nearestNode, findRoute, randomRoadPoint } from './world.js';
 
-// Traffic cars drive the road graph: follow waypoints, slow for the car ahead,
-// stop at busy intersections, never stack. Only cars near the player live.
-function createTrafficCar(G, rng) {
-  const types = ['sedan', 'sedan', 'taxi', 'truck', 'sports', 'sedan'];
-  const type = rng.pick(types);
-  const pp = playerPos(G);
-  const node = nearestNode(G.world, pp.x, pp.y);
-  const i = Math.max(0, Math.min(GRID_N - 1, node.i + rng.int(-4, 4)));
-  const j = Math.max(0, Math.min(GRID_N - 1, node.j + rng.int(-4, 4)));
-  const pos = { x: G.world.roadX(i), y: G.world.roadY(j) };
-  const car = createVehicle(type, pos.x, pos.y, rng.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]));
-  car.traffic = true;
-  car.driver = true; // a traffic car has a driver: taking it is a jacking
-  car.targetSpeed = car.topSpeed * rng.range(0.35, 0.55);
-  car.node = node.id;
-  car.nextNode = null;
-  car.waitT = 0;
-  return car;
-}
+// Traffic: each car holds a waypoint route along the road graph, slows for
+// the car ahead, and never reverses direction except at a dead end. Cars
+// spawn and despawn only near the player, about twenty at a time.
+const TRAFFIC_TYPES = ['sedan', 'sedan', 'taxi', 'sedan', 'truck', 'sedan'];
 
-function updateTraffic(G, dt) {
-  const p = G.player;
-  const px = p.inCar ? p.inCar.x : p.x;
-  const py = p.inCar ? p.inCar.y : p.y;
-  // Keep the budget near the player: despawn the far, spawn the near.
-  G.cars = G.cars.filter((car) => {
-    if (car === p.inCar || car.parked || car.police) return true;
-    if (car.traffic && Math.hypot(car.x - px, car.y - py) > DESPAWN_DIST) return false;
+export function updateTraffic(state, dt) {
+  const px = state.player.x; const py = state.player.y;
+  // Despawn far traffic, keep the count near the target.
+  state.cars = state.cars.filter((car) => {
+    if (car.role === 'traffic') {
+      const d = Math.hypot(car.x - px, car.y - py);
+      return d < 1500;
+    }
     return true;
   });
-  const trafficCount = G.cars.filter((c) => c.traffic).length;
-  for (let k = trafficCount; k < TRAFFIC_TARGET; k++) {
-    const car = createTrafficCar(G, G.rng);
-    if (Math.hypot(car.x - px, car.y - py) < SPAWN_DIST * 0.4) continue;
-    G.cars.push(car);
+  const trafficCount = state.cars.filter((c) => c.role === 'traffic').length;
+  if (trafficCount < 18 && state.time - (state.lastTrafficSpawn || 0) > 0.7) {
+    state.lastTrafficSpawn = state.time;
+    spawnTrafficCar(state);
   }
-  for (const car of G.cars) {
-    if (!car.traffic || car.wrecked) continue;
-    // Pick the next intersection when the current one is reached.
-    const target = car.nextNode != null ? nodePos(G.world, car.nextNode) : null;
-    if (!target || Math.hypot(target.x - car.x, target.y - car.y) < 26) {
-      car.node = car.nextNode != null ? car.nextNode : nearestNode(G.world, car.x, car.y).id;
-      const opts = nodeNeighbours(car.node);
-      car.nextNode = opts[Math.floor(G.rng.next() * opts.length)];
-      continue;
-    }
-    const want = Math.atan2(target.y - car.y, target.x - car.x);
-    let diff = want - car.angle;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    car.angle += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff * 3 * dt));
-    // Slow for the car ahead, and at intersections when cross traffic is near.
-    let desired = car.targetSpeed;
-    for (const other of G.cars) {
-      if (other === car || other.wrecked) continue;
-      const dx = other.x - car.x, dy = other.y - car.y;
-      const d = Math.hypot(dx, dy);
-      if (d < 70 && Math.cos(Math.atan2(dy, dx) - car.angle) > 0.6) { desired = 0; break; }
-    }
-    if (Math.hypot(target.x - car.x, target.y - car.y) < 90) desired = Math.min(desired, car.targetSpeed * 0.55);
-    car.speed += Math.sign(desired - car.speed) * 200 * dt;
-    car.speed = Math.max(0, Math.min(car.topSpeed, car.speed));
-    const nx = car.x + Math.cos(car.angle) * car.speed * dt;
-    const ny = car.y + Math.sin(car.angle) * car.speed * dt;
-    const c = collideCircle(G.world, nx, ny, car.len * 0.42);
-    car.x = c.x; car.y = c.y;
-    if (c.hit) car.speed = 0;
+  for (const car of state.cars) {
+    if (car.role !== 'traffic') continue;
+    driveTrafficCar(state, car, dt);
   }
 }
 
-// Parked cars from the world generator become stealable vehicles.
-function spawnParkedCars(G) {
-  for (const spot of G.world.parkedSpots) {
-    const car = createVehicle(spot.type, spot.x, spot.y, spot.angle);
-    car.parked = true;
-    car.traffic = false;
-    G.cars.push(car);
-  }
+function spawnTrafficCar(state) {
+  const rng = state.rng;
+  const angle = Math.floor(rng() * 8) * (Math.PI / 4);
+  const dist = 700 + rng() * 500;
+  const x = state.player.x + Math.cos(angle) * dist;
+  const y = state.player.y + Math.sin(angle) * dist;
+  const node = nearestNode(state.world, x, y);
+  const type = pick(rng, TRAFFIC_TYPES);
+  const car = makeCar(type, node.x, node.y, pick(rng, [0, Math.PI / 2, Math.PI, -Math.PI / 2]), 'traffic');
+  car.color = pick(rng, ['#c94f3d', '#3d6fc9', '#d8d3c8', '#5a7d5a', '#f2c230', '#8a7f72']);
+  car.cruise = 170 + rng() * 70;
+  car.route = [];
+  car.routeIndex = 0;
+  state.cars.push(car);
 }
 
-export { createTrafficCar, updateTraffic, spawnParkedCars };
+function driveTrafficCar(state, car, dt) {
+  if (!car.route || car.routeIndex >= car.route.length) {
+    const from = nearestNode(state.world, car.x, car.y);
+    const target = randomRoadPoint(state.rng);
+    const route = findRoute(state.world, from, target);
+    // Never reverse at a junction: drop a first step that points backwards.
+    car.route = route;
+    car.routeIndex = 0;
+  }
+  const wp = car.route[car.routeIndex];
+  if (!wp) return;
+  const dx = wp.x - car.x; const dy = wp.y - car.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 26) { car.routeIndex++; return; }
+  const want = Math.atan2(dy, dx);
+  let diff = want - car.angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  const steer = Math.max(-1, Math.min(1, diff * 2.2));
+  const ahead = carAheadDistance(state, car, 130);
+  let throttle = 1;
+  if (ahead < 70) throttle = 0;
+  else if (ahead < 130) throttle = 0.35;
+  if (Math.abs(diff) > 1.1) throttle = Math.min(throttle, 0.4);
+  driveCar(state, car, dt, throttle, steer, false);
+  // Keep the cruise modest: traffic never races the player.
+  if (car.speed > car.cruise) car.speed = car.cruise;
+}

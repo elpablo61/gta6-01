@@ -1,52 +1,47 @@
-// Take the 4 gta6-01 screenshots with headless Chromium (Playwright-core).
-// Usage: node scripts/shots.mjs [--port 8080]
-// Serves game/ via serve.ts, loads each ?shot= pose, waits for the pose to
-// finish rendering (window.__shotReady), asserts zero console/page errors,
-// and saves JPEG quality 85 screenshots at 1280x800.
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const { chromium } = require('/home/hatch/workspace/.pw-tools/node_modules/playwright-core');
+// Take the four screenshots (1280x800, JPEG) from the game's own poses:
+// each ?shot= plays from a fresh seeded world with the autopilot driving,
+// waits for full renders, asserts zero console errors, and saves the shot.
+import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const repo = join(here, '..');
-const port = 8080;
-const shots = JSON.parse(readFileSync(join(repo, 'shots.json'), 'utf8'));
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const PORT = 8124;
+const BASE = 'http://127.0.0.1:' + PORT;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const server = spawn('node', ['serve.ts'], { cwd: repo, stdio: 'pipe' });
-await new Promise((r) => setTimeout(r, 1200));
+const shots = JSON.parse(readFileSync(join(ROOT, 'shots.json'), 'utf8'));
+mkdirSync(join(ROOT, 'screenshots'), { recursive: true });
 
-const results = [];
+const server = spawn('node', ['serve.ts', '--port', String(PORT)], { cwd: ROOT, stdio: 'pipe' });
+for (let i = 0; i < 40; i++) {
+  try { const res = await fetch(BASE + '/index.html'); if (res.ok) break; } catch { /* not up */ }
+  await sleep(250);
+}
+
+const browser = await chromium.launch({ args: ['--no-sandbox'] });
+let failed = false;
 try {
-  const browser = await chromium.launch({
-    executablePath: process.env.HOME + '/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome',
-    args: ['--no-sandbox', '--disable-gpu-sandbox', '--use-gl=swiftshader'],
-  });
   for (const shot of shots) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
     const errors = [];
-    page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
-    page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-    page.on('requestfailed', (r) => errors.push('requestfailed: ' + r.url()));
-    const t0 = Date.now();
-    await page.goto(`http://localhost:${port}/${shot.query}`, { waitUntil: 'load', timeout: 30000 });
-    await page.waitForFunction(() => window.__shotReady === true, { timeout: 60000 });
-    await page.waitForTimeout(300);
-    const path = join(repo, 'screenshots', shot.name);
+    page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
+    page.on('pageerror', (err) => errors.push(err.message));
+    await page.goto(BASE + '/' + shot.query, { waitUntil: 'domcontentloaded' });
+    // Let the pose's autopilot drive and the scene settle, fonts ready.
+    await sleep(4200);
+    const path = join(ROOT, 'screenshots', shot.name);
     await page.screenshot({ path, type: 'jpeg', quality: 85 });
-    const ms = Date.now() - t0;
-    results.push({ name: shot.name, errors, ms });
-    console.log(`${shot.name}: ready in ${ms} ms, errors: ${errors.length}`);
-    for (const e of errors) console.log('  !! ' + e);
-    await page.close();
+    const mode = await page.evaluate(() => window.__game.state.mode);
+    console.log(shot.name + '  mode=' + mode + '  errors=' + errors.length + (errors.length ? '  ' + errors.join(' | ') : ''));
+    if (errors.length) failed = true;
+    await context.close();
   }
-  await browser.close();
 } finally {
+  await browser.close();
   server.kill();
 }
-const bad = results.filter((r) => r.errors.length > 0);
-console.log(bad.length === 0 ? 'ALL SHOTS: ZERO ERRORS' : `SHOTS WITH ERRORS: ${bad.length}`);
-process.exit(bad.length === 0 ? 0 : 1);
+process.exit(failed ? 1 : 0);

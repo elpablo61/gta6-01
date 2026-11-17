@@ -1,64 +1,55 @@
 const GAME_TITLE = 'Crescent Bay';
 const WORLD_SEED = 20261117;
+const WORLD_HALF = 1600;
+const ROAD_HALF = 56;
+const GRID_LINES = [-1200, -800, -400, 0, 400, 800, 1200];
 const SAVE_KEY = 'crescent-bay-save-v1';
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 3;
 
-// World geometry: a road grid, a beach and open water on the east edge.
-const ROAD_SPACING = 260;
-const ROAD_W = 64;
-const SIDEWALK_W = 18;
-const GRID_N = 11; // intersections per side (0..10)
-const ROAD0 = 100; // first road centre
-const WORLD_W = 3400;
-const WORLD_H = 2860;
-const SAND_X0 = 2830;
-const WATER_X0 = 2960;
-
-// Fixed timestep: simulation always advances in 1/60 s steps.
-const STEP = 1 / 60;
-
-// Wanted heat: crimes add heat, stars are thresholds on it.
-const WANTED_STAR_THRESHOLDS = [0, 12, 30, 55, 80];
-const HEAT_MAX = 100;
-
-// Player on foot.
-const PLAYER_WALK_SPEED = 150;
-const PLAYER_RUN_SPEED = 250;
-const PLAYER_RADIUS = 14;
-const PLAYER_HEALTH_MAX = 100;
-
-// Vehicle types: top speed (px/s), acceleration, steering, colour identity.
-const VEHICLE_TYPES = {
-  sedan:   { topSpeed: 430, accel: 260, brake: 520, steer: 2.6, len: 52, wid: 26, color: '#3f7fbf', name: 'Sedan' },
-  taxi:    { topSpeed: 420, accel: 250, brake: 520, steer: 2.6, len: 52, wid: 26, color: '#f2c200', name: 'Taxi' },
-  truck:   { topSpeed: 330, accel: 170, brake: 380, steer: 1.9, len: 72, wid: 30, color: '#8a6f4d', name: 'Truck' },
-  sports:  { topSpeed: 560, accel: 380, brake: 620, steer: 3.1, len: 54, wid: 26, color: '#e8352c', name: 'Sports' },
-  police:  { topSpeed: 520, accel: 340, brake: 600, steer: 3.0, len: 54, wid: 26, color: '#1c2733', name: 'Patrol' },
+const CAR_TYPES = {
+  sedan:   { name: 'Sedan',   topSpeed: 340, accel: 300, turn: 2.6, length: 64, width: 30, colors: ['#c94f3d', '#3d6fc9', '#d8d3c8', '#5a7d5a'] },
+  taxi:    { name: 'Taxi',    topSpeed: 350, accel: 310, turn: 2.6, length: 64, width: 30, colors: ['#f2c230'] },
+  truck:   { name: 'Truck',   topSpeed: 285, accel: 220, turn: 2.0, length: 92, width: 34, colors: ['#8a7f72', '#4f6b7a', '#a35a2e'] },
+  sports:  { name: 'Sports',  topSpeed: 520, accel: 420, turn: 3.1, length: 66, width: 30, colors: ['#e8b400', '#d92b2b', '#1f9d8a'] },
+  police:  { name: 'Patrol',  topSpeed: 480, accel: 380, turn: 3.0, length: 66, width: 30, colors: ['#20242c'] },
+  courier: { name: 'Courier', topSpeed: 448, accel: 360, turn: 2.9, length: 64, width: 30, colors: ['#7a4fd0'] },
 };
 
-// Traffic and pedestrian budgets (active agents near the player only).
-const TRAFFIC_TARGET = 16;
-const PED_TARGET = 26;
-const DESPAWN_DIST = 1150;
-const SPAWN_DIST = 900;
+const WANTED_STAR_THRESHOLDS = [15, 35, 55, 75, 90];
+const WANTED_HEAT_MAX = 100;
+const HEAT_PER_CAR_THEFT = 18;
+const HEAT_PER_SHOT = 6;
+const HEAT_PER_PED_HIT = 22;
+const HEAT_PER_COP_KILL = 30;
+const HEAT_DECAY_PER_SEC = 3.5;
+const HEAT_DECAY_HIDDEN_PER_SEC = 7;
+const HEAT_DECAY_GARAGE_PER_SEC = 26;
 
-// Mission and economy.
-const MISSION_REWARD_DEFAULT = 400;
-const SPRAY_SHOP_COST = 50;
-const RESPAWN_CASH_LOSS = 150;
-const PISTOL_AMMO_MAX = 60;
-const PICKUP_HEALTH = 35;
+const PLAYER_WALK_SPEED = 235;
+const PLAYER_SPRINT_SPEED = 340;
+const PLAYER_RADIUS = 15;
+const PLAYER_MAX_HEALTH = 100;
+const PISTOL_DAMAGE = 34;
+const PISTOL_RANGE = 520;
+const PISTOL_FIRE_INTERVAL = 0.24;
 
-// Day cycle: one full game day lasts 8 real minutes; clock starts mid-morning.
-const DAY_LENGTH_S = 480;
-const CLOCK_START_H = 10.5;
+const MISSION_TRIGGER_RADIUS = 50;
+const GOTO_RADIUS = 72;
+const CHASE_HIT_DISTANCE = 70;
+const CHASE_HIT_MIN_SPEED = 120;
+
+const REPAINT_GARAGE = { x: 200, y: -1000, w: 150, h: 110 };
+const MARINA = { x: -1360, y: 300 };
+const DOCKS = { x: -1360, y: -600 };
+const HIGHWAY_Y = 1200;
 
 export {
-  GAME_TITLE, WORLD_SEED, SAVE_KEY, SAVE_VERSION,
-  ROAD_SPACING, ROAD_W, SIDEWALK_W, GRID_N, ROAD0, WORLD_W, WORLD_H,
-  SAND_X0, WATER_X0, STEP, WANTED_STAR_THRESHOLDS, HEAT_MAX,
-  PLAYER_WALK_SPEED, PLAYER_RUN_SPEED, PLAYER_RADIUS, PLAYER_HEALTH_MAX,
-  VEHICLE_TYPES, TRAFFIC_TARGET, PED_TARGET, DESPAWN_DIST, SPAWN_DIST,
-  MISSION_REWARD_DEFAULT, SPRAY_SHOP_COST, RESPAWN_CASH_LOSS,
-  PISTOL_AMMO_MAX, PICKUP_HEALTH, DAY_LENGTH_S, CLOCK_START_H,
+  GAME_TITLE, WORLD_SEED, WORLD_HALF, ROAD_HALF, GRID_LINES, SAVE_KEY, SAVE_VERSION,
+  CAR_TYPES, WANTED_STAR_THRESHOLDS, WANTED_HEAT_MAX,
+  HEAT_PER_CAR_THEFT, HEAT_PER_SHOT, HEAT_PER_PED_HIT, HEAT_PER_COP_KILL,
+  HEAT_DECAY_PER_SEC, HEAT_DECAY_HIDDEN_PER_SEC, HEAT_DECAY_GARAGE_PER_SEC,
+  PLAYER_WALK_SPEED, PLAYER_SPRINT_SPEED, PLAYER_RADIUS, PLAYER_MAX_HEALTH,
+  PISTOL_DAMAGE, PISTOL_RANGE, PISTOL_FIRE_INTERVAL,
+  MISSION_TRIGGER_RADIUS, GOTO_RADIUS, CHASE_HIT_DISTANCE, CHASE_HIT_MIN_SPEED,
+  REPAINT_GARAGE, MARINA, DOCKS, HIGHWAY_Y,
 };

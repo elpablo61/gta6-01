@@ -1,344 +1,273 @@
-import { createVehicle } from './vehicles.js';
-import { addWantedHeat, addCash, toast } from './player.js';
-import { spawnRivalCrew } from './combat.js';
-import { nearestNode, nodePos, nodeNeighbours } from './world.js';
-import { autosave } from './save.js';
+import { GOTO_RADIUS, CHASE_HIT_DISTANCE, CHASE_HIT_MIN_SPEED, MARINA, DOCKS } from './config.js';
+import { makeCar, driveCar } from './vehicles.js';
+import { nearestNode, findRoute } from './world.js';
+import { spawnEnemies } from './combat.js';
+import { setWantedHeat } from './police.js';
 
-// The 8-mission arc: Rook, a driver new to Crescent Bay, runs jobs for fixer
-// Vera Cross while rival Dario Kane tries to take the city. Each mission is
-// Hook -> Objective -> Obstacle -> Resolution -> Reward; objectives are
-// conditions, not kill counts, and a failed mission restarts from its
-// checkpoint, never from the beginning.
+// The eight-job arc. Each job is data: a fixer hook, a sequence of
+// objectives that are conditions (reach, ram, escape, clear) rather than
+// kill counts, and a cash reward. The engine below is generic; jobs 4-8
+// are variants of the same objective types as jobs 1-3.
 const MISSION_ARC = [
   {
-    id: 'm1-first-job', name: 'First Job', reward: 400,
-    intro: ["Vera: Rook. You drive, I pay. Pick up my package at the Crescent Docks.",
-            "Vera: Bring it to my garage in one piece. Don't make me regret hiring you."],
-    outro: ["Vera: Clean run. You're hired, Rook. There's more work where that came from."],
-    stages: [
-      { kind: 'driveTo', at: 'docks', label: 'Pick up the package at the Crescent Docks' },
-      { kind: 'driveTo', at: 'fixerGarage', label: 'Deliver the package to Vera\'s Garage' },
+    id: 'first-job', name: 'First Job', fixer: 'Mara Voss',
+    hook: 'Mara: Rook, first job. Pick up the package on Harbor Row, drop it at the old arcade. Easy money. Don\'t make it hard.',
+    reward: 400, type: 'goto',
+    startPoint: { x: 0, y: 400 },
+    targets: [
+      { x: 400, y: 400, label: 'Pick up the package' },
+      { x: -400, y: -400, label: 'Deliver the package' },
     ],
   },
   {
-    id: 'm2-tail-chase', name: 'Tail Chase', reward: 500,
-    intro: ["Vera: One of Kane's couriers is running my route. Ram his car off the road.",
-            "Vera: Three good hits will do it. Don't let him reach the marina."],
-    outro: ["Vera: Kane's boy is walking home. The route is ours again."],
-    stages: [
-      { kind: 'chase', at: 'marina', label: 'Ram the courier car (0/3 hits)' },
+    id: 'tail-chase', name: 'Tail Chase', fixer: 'Mara Voss',
+    hook: 'Mara: A courier is moving my cut across town. Ram his car till he stops. Five good hits and he\'s done.',
+    reward: 800, type: 'chase',
+    startPoint: { x: 400, y: 0 },
+    targets: [{ x: 0, y: 0, label: 'Ram the courier — 5 hits' }],
+    hitsNeeded: 5,
+  },
+  {
+    id: 'hot-wheels', name: 'Hot Wheels', fixer: 'Dante Cole',
+    hook: 'Dante: The crew needs a fast car moved across town, three stops, no scratches if you can help it. Clock\'s loose. Go.',
+    reward: 1200, type: 'goto', timeLimit: 300,
+    startPoint: { x: -400, y: 0 },
+    targets: [
+      { x: 1200, y: 1200, label: 'Stop 1 — South Gate' },
+      { x: -1200, y: 800, label: 'Stop 2 — West End' },
+      { x: 800, y: -1200, label: 'Stop 3 — North Yard' },
     ],
   },
   {
-    id: 'm3-hot-wheels', name: 'Hot Wheels', reward: 550,
-    intro: ["Vera: The precinct is watching my garage. Take a car and draw them off.",
-            "Vera: Then lose them. Break line of sight, swap cars, or get a new paint job."],
-    outro: ["Vera: Clean. The cops are chasing ghosts and we're back in business."],
-    stages: [
-      { kind: 'escape', label: 'Lose the police — get your wanted level to zero' },
+    id: 'dockside', name: 'Dockside', fixer: 'Mara Voss',
+    hook: 'Mara: The docks. A crate is waiting at the marina pier. Bring it back to the garage on 5th. Watch the water.',
+    reward: 1500, type: 'goto',
+    startPoint: { x: 0, y: -400 },
+    targets: [
+      { x: MARINA.x, y: MARINA.y, label: 'Pick up the crate at the marina' },
+      { x: 200, y: -800, label: 'Return to the garage' },
     ],
   },
   {
-    id: 'm4-dockside', name: 'Dockside Standoff', reward: 650,
-    intro: ["Vera: Kane's crew is holding my shipment at the docks. Go take it back.",
-            "Vera: They're armed. So are you. Make it quick, Rook."],
-    outro: ["Vera: Shipment's safe. Kane just learned my name is not a suggestion."],
-    stages: [
-      { kind: 'driveTo', at: 'docks', label: 'Reach the Crescent Docks' },
-      { kind: 'shootout', at: 'docks', count: 4, label: 'Clear out Kane\'s crew at the docks' },
+    id: 'midnight-run', name: 'Midnight Run', fixer: 'Dante Cole',
+    hook: 'Dante: Night run. Two drops, no headlights off, no questions. The city sleeps — we don\'t.',
+    reward: 1800, type: 'goto', night: true,
+    startPoint: { x: 400, y: 400 },
+    targets: [
+      { x: -800, y: 1200, label: 'Drop 1 — South Docks' },
+      { x: 1200, y: -800, label: 'Drop 2 — East Gate' },
     ],
   },
   {
-    id: 'm5-midnight-run', name: 'Midnight Run', reward: 700,
-    intro: ["Vera: A buyer at Crescent Plaza wants the goods in two and a half minutes.",
-            "Vera: The clock is already running. Drive like you mean it."],
-    outro: ["Vera: Right on time. That buyer will remember this. So will I."],
-    stages: [
-      { kind: 'timed', at: 'plaza', seconds: 150, label: 'Deliver to Crescent Plaza before time runs out' },
+    id: 'collector', name: 'Collector', fixer: 'Mara Voss',
+    hook: 'Mara: Four stashes hidden around the bay. Collect them all and the crew eats this week. Start driving.',
+    reward: 2200, type: 'collect',
+    startPoint: { x: -400, y: 400 },
+    targets: [
+      { x: 800, y: 800, label: 'Stash 1 of 4' },
+      { x: -800, y: -800, label: 'Stash 2 of 4' },
+      { x: 1200, y: 0, label: 'Stash 3 of 4' },
+      { x: 0, y: -1200, label: 'Stash 4 of 4' },
     ],
   },
   {
-    id: 'm6-collector', name: 'The Collector', reward: 800,
-    intro: ["Vera: A collector at Marina Point is holding something of mine.",
-            "Vera: Pick it up. His friends will object — handle them."],
-    outro: ["Vera: The collector sends his regards. And his money, which is better."],
-    stages: [
-      { kind: 'driveTo', at: 'marina', label: 'Reach Marina Point' },
-      { kind: 'shootout', at: 'marina', count: 2, label: 'Deal with the collector\'s guards' },
-      { kind: 'driveTo', at: 'fixerGarage', label: 'Bring the goods back to Vera\'s Garage' },
-    ],
+    id: 'highway-heat', name: 'Highway Heat', fixer: 'Dante Cole',
+    hook: 'Dante: The whole precinct is on you, Rook. Lose them and get to the north highway gate. Drive like you mean it.',
+    reward: 4600, type: 'escape',
+    startPoint: { x: 0, y: 800 },
+    targets: [{ x: 1200, y: 1200, label: 'Reach the north highway gate' }],
   },
   {
-    id: 'm7-highway-heat', name: 'Highway Heat', reward: 900,
-    intro: ["Vera: Kane's fastest courier is moving product across town. Stop him, then vanish.",
-            "Vera: The cops will be all over this one. Lose them after."],
-    outro: ["Vera: Two jobs in one and you made it look easy. Kane is furious. Good."],
-    stages: [
-      { kind: 'chase', at: 'bank', label: 'Ram the courier car (0/3 hits)' },
-      { kind: 'escape', label: 'Lose the police — get your wanted level to zero' },
-    ],
-  },
-  {
-    id: 'm8-crescent-job', name: 'The Crescent Job', reward: 1500,
-    intro: ["Vera: This is it, Rook. Bay Trust Bank. Kane's money, our retirement.",
-            "Vera: Get in, grab the cash, get out — and don't get caught."],
-    outro: ["Vera: We did it. Crescent Bay is ours now, Rook. All of it."],
-    stages: [
-      { kind: 'driveTo', at: 'bank', label: 'Reach Bay Trust Bank' },
-      { kind: 'shootout', at: 'bank', count: 6, label: 'Hold the bank against Kane\'s crew' },
-      { kind: 'driveTo', at: 'marina', label: 'Escape to Marina Point with the cash' },
-      { kind: 'escape', label: 'Lose the police — get your wanted level to zero' },
+    id: 'crescent-job', name: 'The Crescent Job', fixer: 'Mara Voss',
+    hook: 'Mara: Last one. The docks crew took our money. Take it back — clear the dock, then get out before the precinct arrives.',
+    reward: 6200, type: 'shootout',
+    startPoint: { x: -400, y: -400 },
+    targets: [
+      { x: DOCKS.x, y: DOCKS.y, label: 'Clear the dock crew' },
+      { x: 1200, y: -1200, label: 'Escape to the east gate' },
     ],
   },
 ];
 
-function missionById(id) {
-  return MISSION_ARC.find((m) => m.id === id);
-}
+export { MISSION_ARC };
 
-function nextMissionId(G) {
-  const done = G.save?.missionsDone || [];
-  return MISSION_ARC.find((m) => !done.includes(m.id))?.id || null;
-}
-
-function resolveTarget(G, at) {
-  if (typeof at === 'string') {
-    const lm = G.world.landmarks[at];
-    return { x: lm.x, y: lm.y, name: lm.name };
-  }
-  return at;
-}
-
-function startMission(G, id) {
-  const def = missionById(id);
-  if (!def) return;
-  G.mission = {
-    def, stageI: 0, active: true, timer: 0,
-    targetCar: null, targetHits: 0, hitCooldown: 0,
-    stageSpawned: false, enemiesLeft: 0, package: false,
+export function startMission(state, index) {
+  const def = MISSION_ARC[index];
+  if (!def) return false;
+  state.missionIndex = index;
+  state.mission = {
+    def, index, stage: 0, targetIndex: 0, hits: 0,
+    startedAt: state.time, checkpoint: { x: state.player.x, y: state.player.y },
+    dialogue: def.hook, dialogueUntil: state.time + 5,
+    objective: def.targets[0].label,
   };
-  showDialogue(G, 'Vera Cross', def.intro);
-  toast(G, `Mission: ${def.name} — $${def.reward}`);
-  enterStage(G);
+  state.missionMarker = def.startPoint;
+  if (def.night) state.timeOfDay = 22.2;
+  if (def.type === 'chase') spawnCourier(state);
+  if (def.type === 'escape') setWantedHeat(state, 62);
+  if (def.type === 'shootout') {
+    spawnEnemies(state, def.targets[0].x, def.targets[0].y, 4, 130);
+    // Health pickups near the shootout so the finale stays survivable.
+    state.pickups.push({ x: def.targets[0].x + 90, y: def.targets[0].y + 60, kind: 'health' });
+    state.pickups.push({ x: def.targets[0].x - 90, y: def.targets[0].y - 60, kind: 'health' });
+    state.pickups.push({ x: def.targets[0].x + 40, y: def.targets[0].y - 110, kind: 'ammo' });
+  }
+  state.flashMessage(def.name + ' — ' + def.targets[0].label, 4);
+  return true;
 }
 
-function enterStage(G) {
-  const m = G.mission;
-  if (!m || !m.active) return;
-  const stage = m.def.stages[m.stageI];
-  if (!stage) { completeMission(G); return; }
-  m.stageSpawned = false;
-  m.timer = stage.seconds || 0;
-  if (stage.kind === 'escape') {
-    addWantedHeat(G, 38, 'mission heat');
-    toast(G, 'The police are on you — lose them!');
-  }
-  if (stage.kind === 'chase') {
-    const t = resolveTarget(G, stage.at);
-    const car = createVehicle('sports', t.x, t.y, G.rng.range(0, Math.PI * 2));
-    car.traffic = false; car.chaseTarget = true;
-    car.targetSpeed = car.topSpeed * 0.8;
-    car.node = nearestNode(G.world, t.x, t.y).id;
-    car.nextNode = null;
-    G.cars.push(car);
-    m.targetCar = car;
-    m.targetHits = 0;
-    toast(G, 'There he is — ram the courier!');
-  }
-  if (stage.kind === 'shootout') {
-    const t = resolveTarget(G, stage.at);
-    spawnRivalCrew(G, t.x, t.y, stage.count);
-    m.stageSpawned = true;
-    m.enemiesLeft = stage.count;
-  }
+function spawnCourier(state) {
+  const p = state.player;
+  const heading = state.playerCar ? state.playerCar.angle : p.angle;
+  const node = nearestNode(state.world, p.x + Math.cos(heading) * 420, p.y + Math.sin(heading) * 420);
+  const courier = makeCar('courier', node.x, node.y, heading, 'courier');
+  courier.cruise = 448;
+  courier.route = [];
+  courier.routeIndex = 0;
+  courier.prevNode = null;
+  state.courier = courier;
+  state.cars.push(courier);
 }
 
-function updateMission(G, dt) {
-  const m = G.mission;
-  const p = G.player;
-  // No active mission: show the marker for the next job at Vera's garage.
-  if (!m || !m.active) {
-    const next = nextMissionId(G);
-    if (next) {
-      const g = G.world.landmarks.fixerGarage;
-      G.missionMarker = { x: g.x, y: g.y, label: 'Next job: ' + missionById(next).name };
-      const px = p.inCar ? p.inCar.x : p.x;
-      const py = p.inCar ? p.inCar.y : p.y;
-      // Walk/drive up to the fixer to start the next job (50 px so the
-      // player spawning by the garage does not trigger it instantly).
-      if (Math.hypot(px - g.x, py - g.y) < 50) startMission(G, next);
-    } else {
-      G.missionMarker = null;
+export function updateCourier(state, dt) {
+  const c = state.courier;
+  if (!c) return;
+  if (!c.route || c.routeIndex >= c.route.length) {
+    const from = nearestNode(state.world, c.x, c.y);
+    // Pick a far random destination; never reverse at a junction.
+    const dest = { x: (Math.floor(state.rng() * 7) - 3) * 400, y: (Math.floor(state.rng() * 7) - 3) * 400 };
+    const route = findRoute(state.world, from, dest);
+    if (route.length > 1 && c.prevNode) {
+      const first = route[0];
+      if (first.x === c.prevNode.x && first.y === c.prevNode.y) route.shift();
     }
+    c.route = route;
+    c.routeIndex = 0;
+  }
+  const wp = c.route[c.routeIndex];
+  if (!wp) return;
+  const dx = wp.x - c.x; const dy = wp.y - c.y;
+  if (Math.hypot(dx, dy) < 26) {
+    c.prevNode = nearestNode(state.world, c.x, c.y);
+    c.routeIndex++;
     return;
   }
-  const stage = m.def.stages[m.stageI];
-  if (!stage) { completeMission(G); return; }
-  const px = p.inCar ? p.inCar.x : p.x;
-  const py = p.inCar ? p.inCar.y : p.y;
-  let done = false;
-  if (stage.kind === 'driveTo' || stage.kind === 'pickup' || stage.kind === 'timed') {
-    const t = resolveTarget(G, stage.at);
-    G.missionMarker = { x: t.x, y: t.y, label: stage.label };
-    if (Math.hypot(px - t.x, py - t.y) < 70) {
-      done = true;
-      if (stage.kind === 'pickup' || m.stageI === 0 && m.def.id === 'm1-first-job') {
-        m.package = true;
-        toast(G, 'Package secured.');
-      }
-    }
-    if (stage.kind === 'timed') {
-      m.timer -= dt;
-      if (m.timer <= 0 && !done) { failMission(G, 'Too slow — Vera gives you another shot.'); return; }
-    }
-  } else if (stage.kind === 'escape') {
-    G.missionMarker = null;
-    if (G.wanted.stars === 0) done = true;
-  } else if (stage.kind === 'shootout') {
-    const t = resolveTarget(G, stage.at);
-    G.missionMarker = { x: t.x, y: t.y, label: stage.label };
-    m.enemiesLeft = G.enemies.filter((e) => e.alive).length;
-    if (m.stageSpawned && m.enemiesLeft === 0) done = true;
-  } else if (stage.kind === 'chase') {
-    const car = m.targetCar;
-    if (!car || car.wrecked) {
-      if (m.targetHits >= 3) done = true;
-      else { failMission(G, 'The courier got away — Vera gives you another shot.'); return; }
-    } else {
-      G.missionMarker = { x: car.x, y: car.y, label: stage.label.replace('(0/3 hits)', `(${m.targetHits}/3 hits)`) };
-      updateChaseTarget(G, car, dt);
-      m.hitCooldown -= dt;
-      if (p.inCar && m.hitCooldown <= 0 && Math.hypot(p.inCar.x - car.x, p.inCar.y - car.y) < 70) {
-        // A ram is contact at speed. The old check (within 48 px AND a
-        // 60 px/s speed difference) almost never fired: the bump code keeps
-        // cars ~46 px apart, and a player tailing the courier at matched
-        // speed still drives INTO it — that is a ram.
-        if (Math.abs(p.inCar.speed) > 120) {
-          m.targetHits++;
-          m.hitCooldown = 1.0;
-          car.speed *= 0.4;
-          // Each hit cripples the courier for good: its cruising speed
-          // drops, so the next hit is easier than the last. (Speed alone
-          // recovers in about a second, which made 3 hits nearly impossible.)
-          car.targetSpeed *= 0.55;
-          car.damage = Math.min(100, car.damage + 30);
-          toast(G, `Hit ${m.targetHits}/3!`);
-          if (m.targetHits >= 3) { car.wrecked = true; done = true; }
-        }
-      }
-    }
-  }
-  if (done) {
-    m.stageI++;
-    if (m.stageI >= m.def.stages.length) completeMission(G);
-    else enterStage(G);
-  }
-}
-
-function updateChaseTarget(G, car, dt) {
-  const p = G.player;
-  const px = p.inCar ? p.inCar.x : p.x;
-  const py = p.inCar ? p.inCar.y : p.y;
-  // Flee on the road graph: at each intersection pick the neighbour that
-  // puts the most distance between the courier and the player.
-  const target = car.nextNode != null ? nodePos(G.world, car.nextNode) : null;
-  if (!target || Math.hypot(target.x - car.x, target.y - car.y) < 30) {
-    const prev = car.node;
-    car.node = car.nextNode != null ? car.nextNode : nearestNode(G.world, car.x, car.y).id;
-    let best = null, bestD = -1;
-    for (const nb of nodeNeighbours(car.node)) {
-      // Do not reverse at an intersection: the courier keeps its flee run
-      // going straight, instead of zigzagging in one small loop the player
-      // can never close on. (A dead end still allows the reverse.)
-      if (nb === prev) continue;
-      const np = nodePos(G.world, nb);
-      const d = Math.hypot(np.x - px, np.y - py);
-      if (d > bestD) { bestD = d; best = nb; }
-    }
-    if (best == null) best = prev;
-    car.nextNode = best;
-    return;
-  }
-  const want = Math.atan2(target.y - car.y, target.x - car.x);
-  let diff = want - car.angle;
+  const want = Math.atan2(dy, dx);
+  let diff = want - c.angle;
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
-  car.angle += Math.max(-2.6 * dt, Math.min(2.6 * dt, diff * 3 * dt));
-  car.speed += (car.targetSpeed - car.speed) * Math.min(1, dt);
-  const nx = car.x + Math.cos(car.angle) * car.speed * dt;
-  const ny = car.y + Math.sin(car.angle) * car.speed * dt;
-  const c = { x: nx, y: ny };
-  car.x = c.x; car.y = c.y;
+  const steer = Math.max(-1, Math.min(1, diff * 2.4));
+  driveCar(state, c, dt, 1, steer, false);
+  if (c.speed > c.cruise) c.speed = c.cruise;
 }
 
-function failMission(G, why) {
-  toast(G, why);
-  const id = G.mission.def.id;
-  G.mission = null;
-  // Restart from the checkpoint: the mission itself, not the whole arc.
-  startMission(G, id);
+export function missionObjectiveText(state) {
+  if (!state.mission) return state.nextMissionAt ? 'Drive to the yellow marker for the next job' : 'Free roam — explore Crescent Bay';
+  return state.mission.def.name + ' — ' + state.mission.objective;
 }
 
-function completeMission(G) {
-  const m = G.mission;
-  if (!m) return;
+export function updateMission(state, dt) {
+  const m = state.mission;
+  if (!m) {
+    // Next job becomes available after a breather; the marker shows where.
+    if (state.missionIndex < MISSION_ARC.length - 1 && state.nextMissionAt && state.time >= state.nextMissionAt) {
+      const next = MISSION_ARC[state.missionIndex + 1];
+      state.missionMarker = next.startPoint;
+      const px = state.playerCar ? state.playerCar.x : state.player.x;
+      const py = state.playerCar ? state.playerCar.y : state.player.y;
+      if (Math.hypot(next.startPoint.x - px, next.startPoint.y - py) < 50) {
+        startMission(state, state.missionIndex + 1);
+      }
+    }
+    return;
+  }
   const def = m.def;
-  addCash(G, def.reward);
-  G.save.missionsDone.push(def.id);
-  G.mission = null;
-  G.missionMarker = null;
-  showDialogue(G, 'Vera Cross', def.outro);
-  toast(G, `Mission complete: ${def.name} — +$${def.reward}`);
-  autosave(G);
-}
+  const px = state.playerCar ? state.playerCar.x : state.player.x;
+  const py = state.playerCar ? state.playerCar.y : state.player.y;
 
-function onPlayerRespawn(G) {
-  // A shootout the player died in re-spawns its crew; progress is kept.
-  const m = G.mission;
-  if (!m || !m.active) return;
-  const stage = m.def.stages[m.stageI];
-  if (stage && stage.kind === 'shootout' && G.enemies.length === 0) {
-    const t = resolveTarget(G, stage.at);
-    spawnRivalCrew(G, t.x, t.y, Math.max(1, stage.count - 1));
-    m.enemiesLeft = G.enemies.length;
+  if (def.timeLimit && state.time - m.startedAt > def.timeLimit) {
+    failMission(state, 'Out of time.');
+    return;
+  }
+
+  if (def.type === 'chase') {
+    const c = state.courier;
+    if (c) {
+      const d = Math.hypot(c.x - px, c.y - py);
+      const spd = state.playerCar ? Math.abs(state.playerCar.speed) : 0;
+      if (d < CHASE_HIT_DISTANCE && spd > CHASE_HIT_MIN_SPEED && state.time - (m.lastHitAt || 0) > 0.8) {
+        m.lastHitAt = state.time;
+        m.hits += 1;
+        c.cruise = Math.max(140, c.cruise * 0.55);
+        c.cruiseLimit = c.cruise;
+        state.flashMessage('Hit ' + m.hits + ' of ' + def.hitsNeeded + ' — he\'s slowing down!', 2);
+        state.addSkid(c.x, c.y, c.angle);
+        if (m.hits >= def.hitsNeeded) completeMission(state);
+      }
+      m.objective = 'Ram the courier — ' + m.hits + ' of ' + def.hitsNeeded + ' hits';
+    }
+    return;
+  }
+
+  if (def.type === 'shootout') {
+    if (m.stage === 0) {
+      const alive = state.enemies.filter((e) => e.health > 0).length;
+      m.objective = 'Clear the dock crew — ' + alive + ' left';
+      if (alive === 0) {
+        m.stage = 1;
+        m.targetIndex = 1;
+        m.objective = def.targets[1].label;
+        state.flashMessage('Dock clear — get out of there!', 3);
+      }
+      return;
+    }
+    // Stage 1: escape drive.
+    const t = def.targets[1];
+    if (Math.hypot(t.x - px, t.y - py) < GOTO_RADIUS) completeMission(state);
+    return;
+  }
+
+  // goto / collect / escape / timed: sequential drive-through targets.
+  const t = def.targets[m.targetIndex];
+  if (!t) { completeMission(state); return; }
+  if (Math.hypot(t.x - px, t.y - py) < GOTO_RADIUS) {
+    m.targetIndex += 1;
+    if (m.targetIndex >= def.targets.length) {
+      completeMission(state);
+    } else {
+      m.objective = def.targets[m.targetIndex].label;
+      state.flashMessage(def.targets[m.targetIndex].label, 3);
+      if (state.audio && state.audio.pickup) state.audio.pickup();
+    }
   }
 }
 
-// Dialogue box (DOM): a queue of lines, advanced by click / E / timeout.
-function showDialogue(G, speaker, lines) {
-  G.dialogue = { speaker, lines: [...lines], i: 0, t: 0 };
-  renderDialogue(G);
+function completeMission(state) {
+  const m = state.mission;
+  const reward = m.def.reward;
+  state.player.cash += reward;
+  state.completedMissions = state.completedMissions || [];
+  state.completedMissions.push(m.def.id);
+  state.flashMessage(m.def.name + ' complete — $' + reward, 4);
+  if (state.audio && state.audio.pickup) state.audio.pickup();
+  state.courier = null;
+  state.mission = null;
+  state.missionIndex = m.index;
+  state.nextMissionAt = state.time + 5;
+  state.missionMarker = null;
+  state.autosave();
 }
 
-function renderDialogue(G) {
-  const box = document.getElementById('dialogue-box');
-  if (!box) return;
-  const d = G.dialogue;
-  if (!d || d.i >= d.lines.length) { box.classList.add('hidden'); G.dialogue = null; return; }
-  box.classList.remove('hidden');
-  const name = document.getElementById('dialogue-name');
-  const text = document.getElementById('dialogue-text');
-  if (name) name.textContent = d.speaker;
-  if (text) text.textContent = d.lines[d.i];
-  d.t = 0;
+function failMission(state, reason) {
+  const m = state.mission;
+  state.flashMessage(reason + ' Restarting ' + m.def.name + ' from the checkpoint.', 4);
+  const cp = m.checkpoint;
+  state.player.x = cp.x; state.player.y = cp.y;
+  state.player.health = 100;
+  if (state.playerCar) { state.playerCar = null; state.player.inCar = null; }
+  state.courier = null;
+  state.enemies = [];
+  const index = m.index;
+  state.mission = null;
+  startMission(state, index);
 }
-
-function advanceDialogue(G) {
-  const d = G.dialogue;
-  if (!d) return;
-  d.i++;
-  renderDialogue(G);
-}
-
-function updateDialogue(G, dt) {
-  const d = G.dialogue;
-  if (!d) return;
-  d.t += dt;
-  if (d.t > 6) { d.i++; renderDialogue(G); }
-}
-
-export {
-  MISSION_ARC, missionById, nextMissionId, startMission, updateMission,
-  completeMission, failMission, onPlayerRespawn, showDialogue, advanceDialogue,
-  updateDialogue, resolveTarget,
-};

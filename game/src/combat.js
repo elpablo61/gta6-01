@@ -1,96 +1,119 @@
-import { collideCircle, pointInBuilding } from './world.js';
-import { fireBullet, spawnParticle, healPlayer, giveAmmo, toast } from './player.js';
-import { playGunshot, playPickup } from './audio.js';
+import { PISTOL_DAMAGE, PISTOL_RANGE, PISTOL_FIRE_INTERVAL } from './config.js';
+import { addWantedHeat } from './police.js';
 
-// Rival crew: armed enemies for shootout missions. They advance on the
-// player, strafe, and shoot when they have line of sight and range.
-function spawnRivalCrew(G, x, y, count) {
-  const crew = [];
+// Bullets are pooled in a plain array: fired, flown, and reaped every frame.
+// The player shoots on foot with the mouse; mission enemies shoot back.
+export function fireBullet(state, x, y, angle, owner, damage) {
+  if (state.bullets.length > 60) return;
+  state.bullets.push({
+    x, y, vx: Math.cos(angle) * 780, vy: Math.sin(angle) * 780,
+    life: 0.7, owner, damage: damage || PISTOL_DAMAGE,
+  });
+  state.particles.push({ x, y, vx: 0, vy: 0, life: 0.1, maxLife: 0.1, size: 16, kind: 'flash', color: '#fff3b0' });
+  state.gunshotAt = state.time;
+}
+
+export function updateBullets(state, dt) {
+  const p = state.player;
+  for (let i = state.bullets.length - 1; i >= 0; i--) {
+    const b = state.bullets[i];
+    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+    let dead = b.life <= 0;
+    // Buildings stop bullets.
+    for (const bd of state.world.buildings) {
+      if (Math.abs(b.x - bd.x) < bd.w / 2 && Math.abs(b.y - bd.y) < bd.d / 2) {
+        dead = true;
+        state.particles.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.25, maxLife: 0.25, size: 8, kind: 'spark', color: '#ffb02e' });
+        break;
+      }
+    }
+    if (!dead && b.owner === 'player') {
+      for (const e of state.enemies) {
+        if (e.health > 0 && Math.hypot(e.x - b.x, e.y - b.y) < 22) {
+          e.health -= b.damage;
+          dead = true;
+          state.particles.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.3, maxLife: 0.3, size: 10, kind: 'spark', color: '#ff5a4e' });
+          if (e.health <= 0) {
+            state.flashMessage('Target down.', 1.5);
+            addWantedHeat(state, 8);
+          }
+          break;
+        }
+      }
+      if (!dead) {
+        for (const cop of state.cops) {
+          if (cop.health > 0 && Math.hypot(cop.x - b.x, cop.y - b.y) < 22) {
+            cop.health -= b.damage;
+            dead = true;
+            if (cop.health <= 0) {
+              addWantedHeat(state, 30);
+              state.cops = state.cops.filter((c) => c !== cop);
+              state.flashMessage('Officer down — the whole city is coming.', 2.5);
+            }
+            break;
+          }
+        }
+      }
+    }
+    if (!dead && b.owner === 'enemy') {
+      if (!state.playerCar && Math.hypot(p.x - b.x, p.y - b.y) < 18) {
+        dead = true;
+        state.player.health -= b.damage;
+        state.player.lastDamageAt = state.time;
+        if (state.player.health <= 0) {
+          state.player.health = 0;
+          state.gameOver = 'DOWN';
+          state.mode = 'gameover';
+        }
+      }
+    }
+    if (dead) state.bullets.splice(i, 1);
+  }
+}
+
+export function tryPlayerShoot(state, move) {
+  const p = state.player;
+  if (state.playerCar || p.health <= 0) return;
+  if (!move.shoot) return;
+  if (state.time - (state.lastShotAt || 0) < PISTOL_FIRE_INTERVAL) return;
+  if (p.ammo <= 0) {
+    state.flashMessage('Out of ammo — find a pickup.', 2);
+    state.lastShotAt = state.time + 0.5;
+    return;
+  }
+  state.lastShotAt = state.time;
+  p.ammo -= 1;
+  fireBullet(state, p.x + Math.cos(p.aimAngle) * 22, p.y + Math.sin(p.aimAngle) * 22, p.aimAngle, 'player', PISTOL_DAMAGE);
+  if (state.audio && state.audio.gunshot) state.audio.gunshot();
+  addWantedHeat(state, 2);
+}
+
+export function updateEnemies(state, dt) {
+  const p = state.player;
+  for (const e of state.enemies) {
+    if (e.health <= 0) continue;
+    const d = Math.hypot(p.x - e.x, p.y - e.y);
+    if (d > 480 || state.playerCar) {
+      // Hold position and wait; enemies guard their turf.
+      continue;
+    }
+    if (state.time > (e.shootAt || 0)) {
+      e.shootAt = state.time + 1.5;
+      const angle = Math.atan2(p.y - e.y, p.x - e.x);
+      fireBullet(state, e.x + Math.cos(angle) * 20, e.y + Math.sin(angle) * 20, angle, 'enemy', 5);
+    }
+  }
+  state.enemies = state.enemies.filter((e) => e.health > 0 || state.time - (e.diedAt || 0) < 0.5);
+}
+
+export function spawnEnemies(state, x, y, count, spread) {
+  state.enemies = [];
   for (let i = 0; i < count; i++) {
-    const a = G.rng.range(0, Math.PI * 2);
-    const r = 60 + G.rng.range(0, 90);
-    const e = {
-      x: x + Math.cos(a) * r, y: y + Math.sin(a) * r,
-      angle: 0, speed: 95, health: 100, alive: true,
-      shootT: G.rng.range(0.5, 1.5), strafeDir: G.rng.chance(0.5) ? 1 : -1,
-      strafeT: 0,
-    };
-    const c = collideCircle(G.world, e.x, e.y, 14);
-    e.x = c.x; e.y = c.y;
-    G.enemies.push(e);
-    crew.push(e);
+    const a = (i / count) * Math.PI * 2 + state.rng() * 0.5;
+    state.enemies.push({
+      x: x + Math.cos(a) * (spread || 120),
+      y: y + Math.sin(a) * (spread || 120),
+      health: 50, shootAt: state.time + 1.2, diedAt: 0,
+    });
   }
-  return crew;
 }
-
-function updateEnemies(G, dt) {
-  const p = G.player;
-  const px = p.inCar ? p.inCar.x : p.x;
-  const py = p.inCar ? p.inCar.y : p.y;
-  for (const e of G.enemies) {
-    if (!e.alive) continue;
-    const d = Math.hypot(px - e.x, py - e.y);
-    const want = Math.atan2(py - e.y, px - e.x);
-    e.angle = want;
-    e.strafeT -= dt;
-    if (e.strafeT <= 0) { e.strafeT = G.rng.range(0.8, 1.8); e.strafeDir *= -1; }
-    // Advance until ~200 px, then strafe and shoot.
-    if (d > 220) {
-      e.x += Math.cos(want) * e.speed * dt;
-      e.y += Math.sin(want) * e.speed * dt;
-    } else {
-      const sa = want + Math.PI / 2 * e.strafeDir;
-      e.x += Math.cos(sa) * e.speed * 0.6 * dt;
-      e.y += Math.sin(sa) * e.speed * 0.6 * dt;
-    }
-    const c = collideCircle(G.world, e.x, e.y, 14);
-    e.x = c.x; e.y = c.y;
-    e.shootT -= dt;
-    if (d < 420 && e.shootT <= 0 && !p.dead && hasLineOfSightTo(G, e.x, e.y, px, py)) {
-      e.shootT = 1.1 + G.rng.range(0, 0.6);
-      const aim = want + G.rng.range(-0.12, 0.12);
-      fireBullet(G, e.x, e.y, aim, 'enemy');
-      playGunshot(G.audio);
-      G.muzzleEnemy = { x: e.x + Math.cos(aim) * 24, y: e.y + Math.sin(aim) * 24, t: 0.07 };
-    }
-  }
-  if (G.muzzleEnemy) {
-    G.muzzleEnemy.t -= dt;
-    if (G.muzzleEnemy.t <= 0) G.muzzleEnemy = null;
-  }
-  G.enemies = G.enemies.filter((e) => e.alive);
-}
-
-function hasLineOfSightTo(G, x0, y0, x1, y1) {
-  const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 40);
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    if (pointInBuilding(G.world, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)) return false;
-  }
-  return true;
-}
-
-function spawnPickup(G, x, y, kind) {
-  // Health / ammo pickups scattered at mission sites and the hospital.
-  G.pickups.push({ x, y, kind, alive: true, bob: 0 });
-}
-
-function updatePickups(G, dt) {
-  const p = G.player;
-  for (const pk of G.pickups) {
-    if (!pk.alive) continue;
-    pk.bob += dt;
-    const px = p.inCar ? p.inCar.x : p.x;
-    const py = p.inCar ? p.inCar.y : p.y;
-    if (Math.hypot(pk.x - px, pk.y - py) < 34) {
-      pk.alive = false;
-      if (pk.kind === 'health') healPlayer(G, 35);
-      else giveAmmo(G, 24);
-      playPickup(G.audio);
-      toast(G, pk.kind === 'health' ? '+35 health' : '+24 ammo');
-    }
-  }
-  G.pickups = G.pickups.filter((pk) => pk.alive);
-}
-
-export { spawnRivalCrew, updateEnemies, hasLineOfSightTo, spawnPickup, updatePickups };

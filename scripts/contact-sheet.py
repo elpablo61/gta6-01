@@ -1,35 +1,42 @@
 #!/usr/bin/env python3
-"""Simulate the judge's contact sheet: cover on top (width 768), the other
-three in a row below, total 768x480, JPEG quality ~80. Also export a
-grayscale version to check the value structure still reads.
-Usage: python3 scripts/contact-sheet.py
-Writes: shots-contact-sheet.jpg and shots-contact-sheet-gray.jpg (repo root,
-outside screenshots/ — evidence only, never submitted).
-"""
+"""Compose the four screenshots exactly as the make.fun judge sees them:
+cover large on top, the other three in a row beneath, 768x480 total,
+JPEG quality ~80 — plus a grayscale twin. Look at both and confirm the
+two-second readability test before reporting done: in two seconds a
+stranger must be able to say city, player car, police chase, mission,
+minimap."""
+import sys
+from pathlib import Path
 from PIL import Image
-import os
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
-SHOTS = ["1-cover.jpg", "2-mission.jpg", "3-night.jpg", "4-start.jpg"]
+ROOT = Path(__file__).resolve().parent.parent
+SHOTS = ROOT / "screenshots"
+OUT = ROOT / "shots-contact-sheet.jpg"
+OUT_GRAY = ROOT / "shots-contact-sheet-gray.jpg"
 
 W, H = 768, 480
 COVER_H = 300
-ROW_H = H - COVER_H
-CELL_W = W // 3
+ROW_H = 168
+GAP = 6
 
-sheet = Image.new("RGB", (W, H), (10, 10, 14))
-cover = Image.open(os.path.join(REPO, "screenshots", SHOTS[0])).convert("RGB")
-cover = cover.resize((W, COVER_H), Image.LANCZOS)
+def load(name):
+    img = Image.open(SHOTS / name).convert("RGB")
+    return img
+
+cover = load("1-cover.jpg").resize((W, COVER_H), Image.LANCZOS)
+row_names = ["2-mission.jpg", "3-night.jpg", "4-start.jpg"]
+cell_w = (W - 2 * GAP) // 3
+row = [load(n).resize((cell_w, ROW_H), Image.LANCZOS) for n in row_names]
+
+sheet = Image.new("RGB", (W, H), (255, 255, 255))
 sheet.paste(cover, (0, 0))
-for i, name in enumerate(SHOTS[1:]):
-    im = Image.open(os.path.join(REPO, "screenshots", name)).convert("RGB")
-    im = im.resize((CELL_W, ROW_H), Image.LANCZOS)
-    sheet.paste(im, (i * CELL_W, COVER_H))
+for i, cell in enumerate(row):
+    sheet.paste(cell, (i * (cell_w + GAP), COVER_H + GAP))
 
-sheet.save(os.path.join(REPO, "shots-contact-sheet.jpg"), "JPEG", quality=80)
-sheet.convert("L").save(os.path.join(REPO, "shots-contact-sheet-gray.jpg"), "JPEG", quality=80)
-print("wrote shots-contact-sheet.jpg + shots-contact-sheet-gray.jpg (768x480)")
-for name in SHOTS:
-    p = os.path.join(REPO, "screenshots", name)
-    print(f"  {name}: {os.path.getsize(p)} bytes")
+sheet.save(OUT, "JPEG", quality=80)
+sheet.convert("L").convert("RGB").save(OUT_GRAY, "JPEG", quality=80)
+print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
+print(f"wrote {OUT_GRAY} ({OUT_GRAY.stat().st_size} bytes)")
+for name in ["1-cover.jpg", "2-mission.jpg", "3-night.jpg", "4-start.jpg"]:
+    p = SHOTS / name
+    print(f"{name}: {p.stat().st_size} bytes")

@@ -1,28 +1,21 @@
 import { SAVE_KEY, SAVE_VERSION } from './config.js';
 
-// Save format v1: cash, position, vehicle, missions done, current mission,
-// wanted heat, health, ammo, clock. Validated on load: a wrong version or
-// broken JSON starts a fresh game with a message — never a crash.
-function saveGame(G) {
-  const p = G.player;
-  const data = {
-    version: SAVE_VERSION,
-    cash: p.cash,
-    x: p.inCar ? p.inCar.x : p.x,
-    y: p.inCar ? p.inCar.y : p.y,
-    inCarType: p.inCar ? p.inCar.type : null,
-    carDamage: p.inCar ? p.inCar.damage : 0,
-    health: p.health,
-    ammo: p.ammo,
-    missionsDone: [...G.save.missionsDone],
-    missionId: G.mission && G.mission.active ? G.mission.def.id : null,
-    missionStage: G.mission && G.mission.active ? G.mission.stageI : 0,
-    heat: G.wanted.heat,
-    clockH: G.clockH,
-    kills: p.kills,
-    savedAt: Date.now(),
-  };
+// Save game: localStorage JSON with a version number. Autosaves on mission
+// completion; manual save from the pause menu. A corrupt or old save starts
+// a fresh game with a message instead of crashing.
+export function saveGame(state) {
   try {
+    const data = {
+      version: SAVE_VERSION,
+      cash: state.player.cash,
+      x: state.player.x, y: state.player.y,
+      health: state.player.health, ammo: state.player.ammo,
+      missionIndex: state.missionIndex,
+      completedMissions: state.completedMissions || [],
+      wantedHeat: state.wantedHeat,
+      timeOfDay: state.timeOfDay,
+      savedAt: Date.now(),
+    };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;
   } catch {
@@ -30,32 +23,46 @@ function saveGame(G) {
   }
 }
 
-function loadGame() {
+export function loadGame(state) {
   let raw = null;
   try {
     raw = localStorage.getItem(SAVE_KEY);
   } catch {
-    return { ok: false, reason: 'storage unavailable' };
+    return { ok: false, reason: 'unavailable' };
   }
-  if (!raw) return { ok: false, reason: 'no save' };
+  if (!raw) return { ok: false, reason: 'empty' };
   let data;
   try {
     data = JSON.parse(raw);
   } catch {
-    return { ok: false, reason: 'corrupt', corrupt: true };
+    return { ok: false, reason: 'corrupt' };
   }
   if (!data || data.version !== SAVE_VERSION || typeof data.cash !== 'number') {
-    return { ok: false, reason: 'old version', corrupt: true };
+    return { ok: false, reason: 'version' };
   }
+  state.player.cash = data.cash;
+  state.player.x = data.x; state.player.y = data.y;
+  state.player.health = data.health || 100;
+  state.player.ammo = data.ammo || 60;
+  state.missionIndex = data.missionIndex ?? -1;
+  state.completedMissions = data.completedMissions || [];
+  state.wantedHeat = data.wantedHeat || 0;
+  state.timeOfDay = data.timeOfDay ?? 10;
   return { ok: true, data };
 }
 
-function autosave(G) {
-  saveGame(G);
+export function autosave(state) {
+  return saveGame(state);
 }
 
-function clearSave() {
+export function hasSave() {
+  try {
+    return !!localStorage.getItem(SAVE_KEY);
+  } catch {
+    return false;
+  }
+}
+
+export function clearSave() {
   try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
 }
-
-export { saveGame, loadGame, autosave, clearSave };

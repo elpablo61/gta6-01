@@ -1,78 +1,73 @@
-import { PED_TARGET, DESPAWN_DIST, SPAWN_DIST, ROAD_W, SIDEWALK_W } from './config.js';
-import { nearestNode, nodePos, nodeNeighbours, collideCircle } from './world.js';
-import { addWantedHeat, spawnParticle, playerPos } from './player.js';
+import { pick, range } from './random.js';
+import { nearestRoadPoint } from './world.js';
 
-// Pedestrians walk the sidewalks, cross at intersections, and flee from
-// gunshots, speeding cars and police chases.
-function createPedestrian(G, rng) {
-  const pp = playerPos(G);
-  const node = nearestNode(G.world, pp.x, pp.y);
-  // Spawn close to the player (within 2 blocks) so the streets around the
-  // player always feel inhabited — the player outruns anything farther away.
-  const i = Math.max(0, Math.min(10, node.i + rng.int(-2, 2)));
-  const j = Math.max(0, Math.min(10, node.j + rng.int(-2, 2)));
-  const horizontal = rng.chance(0.5);
-  const off = (rng.chance(0.5) ? 1 : -1) * (ROAD_W / 2 + SIDEWALK_W / 2);
-  const colors = ['#d94f70', '#4f7fd9', '#e0a53c', '#7fc46a', '#9b6fd9', '#e07a4f'];
+// Pedestrians walk the sidewalks beside the roads and cross at junctions.
+// A gunshot or a speeding car nearby makes them run away.
+const PED_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#e67e22', '#1abc9c', '#ecf0f1'];
+
+export function createPedestrian(state, x, y) {
+  const rng = state.rng;
   return {
-    x: horizontal ? G.world.roadX(i) + rng.range(-100, 100) : G.world.roadX(i) + off,
-    y: horizontal ? G.world.roadY(j) + off : G.world.roadY(j) + rng.range(-100, 100),
-    angle: rng.range(0, Math.PI * 2), speed: rng.range(45, 75),
-    color: rng.pick(colors), alive: true, fleeing: false,
-    target: null, waitT: 0, scaredT: 0,
+    x, y, angle: rng() * Math.PI * 2,
+    speed: 55 + rng() * 35, color: pick(rng, PED_COLORS),
+    target: null, fleeing: false, fleeUntil: 0,
+    bob: rng() * 6,
   };
 }
 
-function updatePedestrians(G, dt) {
-  const p = G.player;
-  const px = p.inCar ? p.inCar.x : p.x;
-  const py = p.inCar ? p.inCar.y : p.y;
-  G.peds = G.peds.filter((ped) => ped.alive && Math.hypot(ped.x - px, ped.y - py) < DESPAWN_DIST);
-  for (let k = G.peds.length; k < PED_TARGET; k++) {
-    const ped = createPedestrian(G, G.rng);
-    if (Math.hypot(ped.x - px, ped.y - py) < SPAWN_DIST * 0.35) continue;
-    G.peds.push(ped);
+export function updatePedestrians(state, dt) {
+  const px = state.player.x; const py = state.player.y;
+  state.peds = state.peds.filter((ped) => Math.hypot(ped.x - px, ped.y - py) < 1600);
+  if (state.peds.length < 26 && state.time - (state.lastPedSpawn || 0) > 0.35) {
+    state.lastPedSpawn = state.time;
+    const angle = state.rng() * Math.PI * 2;
+    const dist = 500 + state.rng() * 600;
+    const rp = nearestRoadPoint(state.world, px + Math.cos(angle) * dist, py + Math.sin(angle) * dist);
+    const side = state.rng() > 0.5 ? 1 : -1;
+    state.peds.push(createPedestrian(state, rp.x + side * 72, rp.y + side * 72));
   }
-  const scared = G.shotsFiredRecently > 0 || (p.inCar && Math.abs(p.inCar.speed) > 180);
-  for (const ped of G.peds) {
-    if (!ped.alive) continue;
-    // Flee from danger: run away from the player / gunfire.
-    if (scared && Math.hypot(ped.x - px, ped.y - py) < 320) {
-      ped.fleeing = true; ped.scaredT = 2.5;
-    }
-    if (ped.scaredT > 0) {
-      ped.scaredT -= dt;
-      if (ped.scaredT <= 0) ped.fleeing = false;
-    }
-    if (ped.fleeing) {
-      const away = Math.atan2(ped.y - py, ped.x - px);
-      ped.angle = away;
-      ped.x += Math.cos(away) * 150 * dt;
-      ped.y += Math.sin(away) * 150 * dt;
-    } else {
-      // Wander: pick a nearby intersection, walk to it, pick another.
-      if (!ped.target || Math.hypot(ped.target.x - ped.x, ped.target.y - ped.y) < 20) {
-        const node = nearestNode(G.world, ped.x, ped.y);
-        const opts = nodeNeighbours(node.id);
-        const next = opts[Math.floor(G.rng.next() * opts.length)];
-        ped.target = nodePos(G.world, next);
-        ped.waitT = G.rng.chance(0.25) ? G.rng.range(0.5, 2) : 0;
-      }
-      if (ped.waitT > 0) { ped.waitT -= dt; continue; }
-      const want = Math.atan2(ped.target.y - ped.y, ped.target.x - ped.x);
-      ped.angle = want;
-      ped.x += Math.cos(want) * ped.speed * dt;
-      ped.y += Math.sin(want) * ped.speed * dt;
-    }
-    const c = collideCircle(G.world, ped.x, ped.y, 10);
-    ped.x = c.x; ped.y = c.y;
-    // Hit by the player's car: a crime, and the pedestrian goes down.
-    if (p.inCar && Math.abs(p.inCar.speed) > 90 && Math.hypot(ped.x - p.inCar.x, ped.y - p.inCar.y) < 26) {
-      ped.alive = false;
-      addWantedHeat(G, 6, 'pedestrian hit');
-      for (let i = 0; i < 8; i++) spawnParticle(G, ped.x, ped.y, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, 0.5, '#e07a4f', 3);
-    }
+  for (const ped of state.peds) {
+    updateOnePed(state, ped, dt);
   }
 }
 
-export { createPedestrian, updatePedestrians };
+function updateOnePed(state, ped, dt) {
+  const p = state.player;
+  const scared = state.gunshotAt && state.time - state.gunshotAt < 1.2
+    && Math.hypot(ped.x - p.x, ped.y - p.y) < 420;
+  const carNear = state.playerCar && Math.hypot(ped.x - state.playerCar.x, ped.y - state.playerCar.y) < 90
+    && Math.abs(state.playerCar.speed) > 200;
+  if (scared || carNear) {
+    ped.fleeing = true;
+    ped.fleeUntil = state.time + 2.5;
+  }
+  if (ped.fleeing && state.time < ped.fleeUntil) {
+    const away = Math.atan2(ped.y - p.y, ped.x - p.x);
+    ped.angle = away;
+    ped.x += Math.cos(away) * 190 * dt;
+    ped.y += Math.sin(away) * 190 * dt;
+    ped.bob += dt * 14;
+    return;
+  }
+  ped.fleeing = false;
+  if (!ped.target || Math.hypot(ped.target.x - ped.x, ped.target.y - ped.y) < 24) {
+    const rp = nearestRoadPoint(state.world, ped.x + (state.rng() - 0.5) * 700, ped.y + (state.rng() - 0.5) * 700);
+    const side = state.rng() > 0.5 ? 1 : -1;
+    ped.target = { x: rp.x + side * 72, y: rp.y + side * 72 };
+  }
+  const dx = ped.target.x - ped.x; const dy = ped.target.y - ped.y;
+  const d = Math.hypot(dx, dy) || 1;
+  ped.angle = Math.atan2(dy, dx);
+  ped.x += (dx / d) * ped.speed * dt;
+  ped.y += (dy / d) * ped.speed * dt;
+  ped.bob += dt * 8;
+}
+
+export function scatterPeds(state, x, y, radius) {
+  for (const ped of state.peds) {
+    if (Math.hypot(ped.x - x, ped.y - y) < radius) {
+      ped.fleeing = true;
+      ped.fleeUntil = state.time + 2.5;
+    }
+  }
+}
