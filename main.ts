@@ -33,3 +33,9 @@ const dossierText = buildDossier(outputDir, {
 });
 writeFileSync(join(outputDir, 'dossier.json'), dossierText);
 console.log('dossier written:', join(outputDir, 'dossier.json'), dossierText.length, 'bytes');
+// The gate refuses a dossier over 1,500,000 bytes; warn well before that
+// so a too-heavy screenshot set is caught here, not at submission.
+if (dossierText.length > 1450000) {
+  console.error('WARNING: dossier is over the 1,450,000 byte safety cap — shrink the screenshots before submitting.');
+  process.exitCode = 1;
+}

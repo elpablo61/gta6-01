@@ -182,12 +182,34 @@ async function modeArc(browser) {
   const t0 = Date.now();
   const seen = new Set();
   let pass = true;
+  let lastSnap = 0;
   while (Date.now() - t0 < 2400000) {
     const done = await page.evaluate(() => window.__game.state.completedMissions.slice());
     for (const id of done) {
       if (!seen.has(id)) { seen.add(id); console.log('MISSION DONE ' + id + ' at ' + Math.round((Date.now() - t0) / 1000) + 's'); }
     }
     if (done.length >= 8) break;
+    if (Date.now() - lastSnap > 30000) {
+      lastSnap = Date.now();
+      const snap = await page.evaluate(() => {
+        const s = window.__game.state;
+        const m = s.mission;
+        return {
+          mode: s.mode, gameOver: s.gameOver,
+          mission: m ? m.def.id + ' stage' + m.stage + ' tgt' + m.targetIndex + (m.def.type === 'chase' ? ' hits' + m.hits : '') : 'none',
+          marker: s.missionMarker ? Math.round(s.missionMarker.x) + ',' + Math.round(s.missionMarker.y) : 'none',
+          px: Math.round(s.player.x), py: Math.round(s.player.y),
+          inCar: s.playerCar ? s.playerCar.type : 'foot',
+          speed: Math.round(s.playerCar ? s.playerCar.speed : 0),
+          heat: Math.round(s.wantedHeat), stars: s.wantedStars,
+          cops: s.cops.length, policeCars: s.policeCars.length,
+          enemies: s.enemies.filter((e) => e.health > 0).length,
+          hp: Math.round(s.player.health), cash: Math.round(s.player.cash),
+          gameTime: Math.round(s.time),
+        };
+      });
+      console.log('SNAP ' + Math.round((Date.now() - t0) / 1000) + 's ' + JSON.stringify(snap));
+    }
     const modeNow = await page.evaluate(() => window.__game.state.mode);
     if (modeNow === 'gameover') {
       console.log('GAME OVER during arc — respawning');

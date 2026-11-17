@@ -317,17 +317,18 @@ function driveToward(state, v, tx, ty, cruise, isStatic) {
     const wp = state.autoRoute[state.autoRouteIndex];
     wx = wp.x; wy = wp.y;
     if (Math.hypot(wp.x - car.x, wp.y - car.y) < 34) state.autoRouteIndex++;
+  } else if (isStatic && Math.hypot(tx - car.x, ty - car.y) < 220) {
+    // Final leg straight to the exact point — static landmarks only, and
+    // only when close. A first version drove straight at any target once
+    // the route ran out, which cut across blocks, wedged the car on a
+    // building, and stalled whole missions.
+    wx = tx; wy = ty;
   } else {
-    // Final leg straight to the exact point — static landmarks only.
-    // (A first version applied this to the moving courier and broke the
-    // highway chase; the gate below is the fix.)
-    if (!isStatic) {
-      const from = nearestNode(state.world, car.x, car.y);
-      state.autoRoute = findRoute(state.world, from, { x: tx, y: ty });
-      state.autoRouteIndex = 0;
-      state.autoRouteTarget = key;
-      if (state.autoRoute.length) { wx = state.autoRoute[0].x; wy = state.autoRoute[0].y; }
-    }
+    // Route empty but the target is still far (a moving target, or the car
+    // shares the target's nearest node): aim at the road point nearest
+    // the target instead of cutting straight across buildings.
+    const rp = nearestRoadPoint(state.world, tx, ty);
+    wx = rp.x; wy = rp.y;
   }
   const dx = wx - car.x; const dy = wy - car.y;
   const dist = Math.hypot(dx, dy);
@@ -373,10 +374,19 @@ function update(state, dt) {
   if (state.playerCar) {
     const car = state.playerCar;
     const steer = (move.left ? -1 : 0) + (move.right ? 1 : 0);
-    const throttle = (move.up ? 1 : 0) + (move.down ? -1 : 0);
+    let throttle = (move.up ? 1 : 0) + (move.down ? -1 : 0);
+    let steerNow = steer;
+    // Unstick: if the car has been pushing at under 25 speed for 2 seconds
+    // (wedged on a building or another car), reverse out for a second.
+    if (state.autoplay) {
+      if (Math.abs(car.speed) < 25 && throttle !== 0) state.stuckTime = (state.stuckTime || 0) + dt;
+      else state.stuckTime = 0;
+      if (state.stuckTime > 2) { state.unstuckUntil = state.time + 0.9; state.stuckTime = 0; }
+      if (state.time < (state.unstuckUntil || 0)) { throttle = -1; steerNow = -steer; }
+    }
     const before = car.speed;
     const angleBefore = car.angle;
-    driveCar(state, car, dt, throttle, steer, move.handbrake);
+    driveCar(state, car, dt, throttle, steerNow, move.handbrake);
     // Hard cornering at speed leaves a skid trail; fast driving puffs
     // exhaust smoke — both freeze visibly in a still frame.
     const angleDelta = Math.abs(car.angle - angleBefore);

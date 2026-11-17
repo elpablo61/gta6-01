@@ -113,7 +113,9 @@ export function carAheadDistance(state, car, maxDist) {
     const along = dx * fx + dy * fy;
     if (along <= 0 || along > best) continue;
     const side = Math.abs(-dx * fy + dy * fx);
-    if (side < 42) best = along;
+    // Parked cars sit 34px off the centreline and must not read as a
+    // blockage; traffic on the centreline is what slows a car down.
+    if (side < 30) best = along;
   }
   return best;
 }
