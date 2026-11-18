@@ -1,75 +1,53 @@
-// Keyboard + mouse state. Edge flags ("just pressed") are read by gameplay
-// during the frame and cleared only at the END of the frame, after every
-// system has had its chance to see them — a click that starts and ends
-// inside one frame must still fire a shot.
-export function createInput(canvas) {
-  const input = {
-    up: false, down: false, left: false, right: false,
-    sprint: false, handbrake: false, interact: false,
-    mouseX: 0, mouseY: 0, mouseDown: false,
-    justInteract: false, justShoot: false, justPause: false, justEnter: false,
-    virtual: null,
-    aimWorldX: 0, aimWorldY: 0,
+// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
+// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
+// frames is never lost and never counted twice.
+
+export const ACTION_CONFIRM = 1;
+export const ACTION_PAUSE = 2;
+
+const LEFT = new Set(['ArrowLeft', 'KeyA']);
+const RIGHT = new Set(['ArrowRight', 'KeyD']);
+const CONFIRM = new Set(['Space', 'Enter']);
+const PAUSE = new Set(['KeyP', 'Escape']);
+
+export function createInput(target) {
+  let left = false;
+  let right = false;
+  let actions = 0;
+
+  window.addEventListener('keydown', (event) => {
+    if (LEFT.has(event.code)) left = true;
+    else if (RIGHT.has(event.code)) right = true;
+    else if (CONFIRM.has(event.code)) {
+      if (!event.repeat) actions |= ACTION_CONFIRM;
+    } else if (PAUSE.has(event.code)) {
+      if (!event.repeat) actions |= ACTION_PAUSE;
+    } else return;
+    event.preventDefault();
+  });
+  window.addEventListener('keyup', (event) => {
+    if (LEFT.has(event.code)) left = false;
+    else if (RIGHT.has(event.code)) right = false;
+  });
+  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
+  window.addEventListener('blur', () => {
+    left = false;
+    right = false;
+  });
+  target.addEventListener('pointerdown', () => {
+    actions |= ACTION_CONFIRM;
+  });
+
+  return {
+    /** -1 for left, 1 for right, 0 for neither or both. */
+    direction() {
+      return (right ? 1 : 0) - (left ? 1 : 0);
+    },
+    /** The one-shot presses since the last call, as ACTION_* flags. */
+    takeActions() {
+      const taken = actions;
+      actions = 0;
+      return taken;
+    },
   };
-
-  const keyMap = {
-    KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down',
-    KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
-    ShiftLeft: 'sprint', ShiftRight: 'sprint', Space: 'handbrake',
-  };
-
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyE') { input.interact = true; input.justInteract = true; }
-    if (e.code === 'Enter') { input.justEnter = true; }
-    if (e.code === 'Escape' || e.code === 'KeyP') { input.justPause = true; }
-    const field = keyMap[e.code];
-    if (field) { input[field] = true; if (e.code === 'Space') e.preventDefault(); }
-  });
-  window.addEventListener('keyup', (e) => {
-    if (e.code === 'KeyE') input.interact = false;
-    const field = keyMap[e.code];
-    if (field) input[field] = false;
-  });
-  canvas.addEventListener('mousemove', (e) => {
-    const r = canvas.getBoundingClientRect();
-    input.mouseX = e.clientX - r.left;
-    input.mouseY = e.clientY - r.top;
-  });
-  canvas.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
-    input.mouseDown = true;
-    input.justShoot = true;
-  });
-  window.addEventListener('mouseup', (e) => {
-    if (e.button === 0) input.mouseDown = false;
-  });
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-  input.endFrame = function endFrame() {
-    input.justInteract = false;
-    input.justShoot = false;
-    input.justPause = false;
-    input.justEnter = false;
-  };
-
-  // Effective (possibly virtualised) movement state for one frame.
-  input.read = function read() {
-    const v = input.virtual;
-    if (!v) {
-      return {
-        up: input.up, down: input.down, left: input.left, right: input.right,
-        sprint: input.sprint, handbrake: input.handbrake,
-        shoot: input.mouseDown || input.justShoot,
-        aimX: input.aimWorldX, aimY: input.aimWorldY,
-      };
-    }
-    return {
-      up: !!v.up, down: !!v.down, left: !!v.left, right: !!v.right,
-      sprint: !!v.sprint, handbrake: !!v.handbrake,
-      shoot: !!v.shoot,
-      aimX: v.aimX ?? input.aimWorldX, aimY: v.aimY ?? input.aimWorldY,
-    };
-  };
-
-  return input;
 }

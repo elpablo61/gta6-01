@@ -3,65 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crescent Bay — an open-world crime game</title>
+<title>Block Dodger</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0e1420; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  /* Read aloud, never shown: the status line screen readers announce. */
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(6, 10, 20, 0.45); z-index: 10; }
-  .panel { background: rgba(8, 12, 22, 0.88); border: 3px solid #ffd94d; border-radius: 14px; padding: 28px 36px; max-width: 620px; color: #fff; text-align: center; }
-  .panel h1 { margin: 0 0 4px; font-size: 56px; letter-spacing: 4px; color: #ffd94d; text-shadow: 0 3px 0 #7a4d00; }
-  .panel h2 { margin: 0 0 14px; font-size: 30px; color: #ffd94d; letter-spacing: 2px; }
-  .panel p { margin: 8px 0; font-size: 17px; line-height: 1.45; color: #e8e8e8; }
-  .features { font-size: 15px; color: #9fd8ff; margin: 12px 0 18px; }
-  .btn { display: block; width: 100%; margin: 8px 0; padding: 13px 18px; font-size: 20px; font-weight: 700; color: #10131c; background: #ffd94d; border: 0; border-radius: 9px; cursor: pointer; }
-  .btn:hover { background: #ffe27a; }
-  .btn.secondary { background: #2f6fb2; color: #fff; }
-  .btn.secondary:hover { background: #3f82c4; }
-  .btn.dimmed { opacity: 0.45; }
-  #controls-list { text-align: left; font-size: 15px; line-height: 1.6; margin: 10px auto 4px; display: inline-block; color: #d8d8d8; }
-  #controls-list b { color: #ffd94d; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Crescent Bay: drive, steal cars, outrun the police and run eight jobs across an open city"></canvas>
+<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
 <p id="status" role="status" aria-live="polite"></p>
-
-<div class="overlay" id="title-screen">
-  <div class="panel">
-    <h1>CRESCENT BAY</h1>
-    <p>An open-world crime game. You are Rook — new in town, fast with a car, faster with a plan. Eight jobs. One city. Five stars of heat.</p>
-    <p class="features">8 missions &bull; Wanted 1&ndash;5 stars &bull; Traffic &amp; pedestrians &bull; Steal any car &bull; Day &amp; night &bull; Save game</p>
-    <button class="btn" id="new-game-btn">New Game</button>
-    <button class="btn secondary" id="continue-btn">Continue</button>
-    <div id="controls-list">
-      <b>WASD / arrows</b> — move &amp; drive &nbsp; <b>Mouse</b> — aim &nbsp; <b>Click</b> — shoot<br>
-      <b>E</b> — enter / exit car &nbsp; <b>Shift</b> — sprint &nbsp; <b>Space</b> — handbrake<br>
-      <b>Esc / P</b> — pause &nbsp; <b>F3</b> — debug overlay
-    </div>
-    <div id="mission-select">Jobs: First Job &middot; Tail Chase &middot; Hot Wheels &middot; Dockside &middot; Midnight Run &middot; Collector &middot; Highway Heat &middot; The Crescent Job</div>
-    <div id="save-slot">Progress saves automatically after every job — and from the pause menu.</div>
-  </div>
-</div>
-
-<div class="overlay" id="pause-menu" style="display:none">
-  <div class="panel">
-    <h2>PAUSED</h2>
-    <p>Take a breath, Rook. The city will wait.</p>
-    <button class="btn" id="resume-btn">Resume</button>
-    <button class="btn secondary" id="save-btn">Save Game</button>
-    <button class="btn secondary" id="quit-btn">Save &amp; Quit to Title</button>
-  </div>
-</div>
-
-<div class="overlay" id="game-over-screen" style="display:none">
-  <div class="panel">
-    <h2 id="game-over-title">DOWN</h2>
-    <p id="game-over-text">Rook is down. You lose $200 and the job restarts.</p>
-    <button class="btn" id="respawn-btn">Get Back Up</button>
-  </div>
-</div>
-
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
