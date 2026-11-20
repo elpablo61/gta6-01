@@ -3,17 +3,88 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<title>Crescent Bay — Open World</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23e8b13a'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle'%3EC%3C/text%3E%3C/svg%3E">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; font-family: sans-serif; color: #fff; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(8,10,18,0.72); z-index: 10; }
+  .panel { background: #1b2030; border: 2px solid #e8b13a; border-radius: 12px; padding: 28px 36px; max-width: 560px; text-align: center; }
+  .panel h1 { margin: 0 0 8px; font-size: 44px; letter-spacing: 2px; color: #e8b13a; }
+  .panel h2 { margin: 0 0 12px; font-size: 30px; color: #e8b13a; }
+  .panel p { color: #cfd4e0; line-height: 1.5; }
+  .panel button { background: #e8b13a; color: #111; border: 0; border-radius: 8px; padding: 12px 22px; font-size: 17px; font-weight: bold; margin: 6px; cursor: pointer; }
+  .panel button:hover { background: #ffd23a; }
+  #save-slots { margin: 14px 0; display: flex; flex-direction: column; gap: 6px; }
+  #save-slots .slot { background: #2a3048; color: #fff; font-weight: normal; font-size: 15px; padding: 9px 14px; }
+  #save-slots .slot.corrupt { background: #5a2a2a; }
+  #controls-list { text-align: left; font-size: 14px; color: #cfd4e0; line-height: 1.7; margin: 12px auto; display: inline-block; }
+  #mission-dialog { position: fixed; left: 50%; bottom: 110px; transform: translateX(-50%); background: #1b2030; border: 2px solid #e8b13a; border-radius: 10px; padding: 16px 22px; width: 520px; z-index: 9; display: none; }
+  #mission-dialog .dialog-fixer { color: #e8b13a; font-weight: bold; font-size: 18px; }
+  #mission-dialog .dialog-text { color: #fff; margin: 8px 0 12px; line-height: 1.45; }
+  #mission-dialog button { background: #e8b13a; color: #111; border: 0; border-radius: 6px; padding: 9px 16px; font-weight: bold; cursor: pointer; margin-right: 8px; }
+  #garage-menu { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(8,10,18,0.8); z-index: 11; }
+  #garage-menu .panel { text-align: left; width: 520px; }
+  .garage-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; color: #cfd4e0; }
+  .garage-row button, .garage-paints button { background: #2a3048; color: #fff; padding: 7px 12px; font-size: 14px; margin: 2px; }
+  .garage-paints button { border: 1px solid #666; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="game" aria-label="Crescent Bay: an open-world crime game. Drive, take jobs from Mara and Dex, and lose the police."></canvas>
 <p id="status" role="status" aria-live="polite"></p>
+
+<div id="title-screen" class="overlay">
+  <div class="panel">
+    <h1>CRESCENT BAY</h1>
+    <p>An open-world crime story. You are Rook, fresh in Crescent Bay. Take jobs from Mara and Dex, steal fast cars, lose the police, and make the city yours.</p>
+    <div id="save-slots"></div>
+    <button id="new-game-btn">New Game</button>
+    <div id="controls-list">
+      <b>Controls</b><br>
+      WASD / arrows — move &amp; drive &nbsp;·&nbsp; Mouse — aim, click — shoot<br>
+      Shift — sprint &nbsp;·&nbsp; E — enter / exit car, accept, open garage<br>
+      1 / 2 / 3 — pistol / SMG / shotgun &nbsp;·&nbsp; Q — cycle weapon<br>
+      R — radio station &nbsp;·&nbsp; Esc — pause
+    </div>
+  </div>
+</div>
+
+<div id="pause-menu" class="overlay" style="display:none">
+  <div class="panel">
+    <h2>Paused</h2>
+    <p>Crescent Bay waits for no one — except now.</p>
+    <button id="resume-btn">Resume</button>
+    <button id="save-btn">Save game</button>
+    <button id="quit-btn">Save &amp; title</button>
+  </div>
+</div>
+
+<div id="game-over-screen" class="overlay" style="display:none">
+  <div class="panel">
+    <h2 class="over-title">DOWN</h2>
+    <p class="over-sub">Rook went down. The job goes again.</p>
+    <button id="retry-btn">Retry mission</button>
+  </div>
+</div>
+
+<div id="mission-dialog">
+  <div class="dialog-fixer">Mara</div>
+  <div class="dialog-text"></div>
+  <button id="dialog-accept" class="dialog-accept">Accept (E)</button>
+  <button id="dialog-close">Later</button>
+</div>
+
+<div id="garage-menu">
+  <div class="panel">
+    <h2>Fixer Garage</h2>
+    <p>Upgrades stay on this car. Paint is visual only — the Spray Shop is what clears heat.</p>
+    <div class="garage-body"></div>
+    <button class="garage-close">Close (drive on)</button>
+  </div>
+</div>
+
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

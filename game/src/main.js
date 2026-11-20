@@ -1,134 +1,232 @@
-// Boot and the one loop: input is read every frame, the world advances in fixed 1/60 s steps
-// (several in a slow frame, none in a fast one), and the renderer paints what is there. The game
-// moves between four screens: title, play, paused and game over.
-//
-// ?seed=N fixes the falling pattern. ?shot=start|play|end (with &seed=N) stages that scene
-// instead of running the loop, paints it twice and sets window.__shotReady for a screenshot.
-import { BEST_KEY, LIVES, STEP } from './config.js';
-import { createRandom } from './random.js';
-import { createWorld, EVENT_HIT, EVENT_OVER } from './world.js';
-import { ACTION_CONFIRM, ACTION_PAUSE, createInput } from './input.js';
-import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
-import { stageShot } from './shots.js';
-
-/** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped, not replayed. */
-const MAX_FRAME = 0.25;
-
-const params = new URLSearchParams(window.location.search);
-const shot = params.get('shot');
-const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
-const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
+// Crescent Bay — boot and the main loop. Update order is deliberate:
+// the autopilot runs BEFORE the dialog branch and before the player,
+// so it can accept mission dialogs and drive without the manual
+// driving branch braking the car back to zero on the same frame.
+import { S, resetRunState } from './state.js';
+import { RNG_SEED, SHOT_SEED } from './config.js';
+import { generateWorld } from './world.js';
+import { initInput, pressed, keys, mouse, endFrameInput } from './input.js';
+import { initAudio, resumeAudio, cycleRadio, sfx } from './audio.js';
+import { spawnParkedCars, separateCars } from './vehicles.js';
+import { initTraffic, updateTraffic } from './traffic.js';
+import { initPeds, updatePeds } from './pedestrians.js';
+import { updateWanted, updatePolice, setHeat } from './police.js';
+import { updateHeli } from './helicopter.js';
+import { initWeapons, updateCrates, switchWeapon, cycleWeapon, spawnWorldCrates } from './weapons.js';
+import { updateBullets, updateEnemies, updatePickups } from './combat.js';
+import { updateMissions, updateCourier, offerMission, acceptDialog, restartAfterDeath, currentMissionDef } from './missions.js';
+import { updatePlayer, exitCar } from './player.js';
+import { updateAutopilot, AP_HOOKS } from './autopilot.js';
+import { render } from './render.js';
+import { showDialog, showTitle, showPause, showGameOver } from './hud.js';
+import { buildGarageMenu, openGarageMenu, garageMenuOpen, closeGarageMenu, nearGarage } from './garage.js';
+import { listSlots, loadSlot, manualSave, saveToSlot } from './save.js';
+import { applyShot } from './shots.js';
+import { makeRng } from './random.js';
 
 const canvas = document.getElementById('game');
-const status = document.getElementById('status');
-const world = createWorld(createRandom(seed));
-const renderer = createRenderer(canvas);
+const g = canvas.getContext('2d');
+let viewW = 1280, viewH = 720;
+let lastT = 0;
+let rng = makeRng(RNG_SEED);
 
-function readBest() {
-  try {
-    return Number.parseInt(window.localStorage.getItem(BEST_KEY) ?? '0', 10) || 0;
-  } catch {
-    return 0;
+function resize() {
+  viewW = window.innerWidth;
+  viewH = window.innerHeight;
+  canvas.width = viewW;
+  canvas.height = viewH;
+}
+
+export function startNewGame(slot = 0) {
+  resetRunState();
+  S.activeSlot = slot;
+  S.mode = 'playing';
+  S.paused = false;
+  S.radioStation = 0;
+  initWeapons();
+  rng = makeRng(S.seed);
+  generateWorld(S.seed);
+  S.cars = [];
+  S.peds = [];
+  spawnParkedCars(rng);
+  initTraffic(12);
+  initPeds(20);
+  spawnWorldCrates();
+  S.dialogCooldown = 5;
+  S.startedAt = performance.now();
+  resumeAudio();
+  hideOverlays();
+}
+
+function hideOverlays() {
+  for (const id of ['title-screen', 'pause-menu', 'game-over-screen']) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
   }
 }
 
-function saveBest(value) {
-  try {
-    window.localStorage.setItem(BEST_KEY, String(value));
-  } catch {
-    // Storage can be off (private windows): the best score then lasts this visit only.
+function continueFromSlot(i) {
+  startNewGame(i);
+  if (loadSlot(i)) {
+    // Loaded progress: offer the next mission, keep the cash.
+    S.dialogCooldown = 1;
   }
 }
 
-function runShot(name) {
-  const scene = stageShot(name, world);
-  let painted = 0;
-  function paint() {
-    renderer.draw(world.state, scene.screen, scene.best);
-    painted += 1;
-    if (painted < 2) requestAnimationFrame(paint);
-    else window.__shotReady = true;
-  }
-  requestAnimationFrame(paint);
-}
-
-function runGame() {
-  const input = createInput(canvas);
-  let screen = SCREEN_TITLE;
-  let best = readBest();
-  let accumulator = 0;
-  let last = performance.now();
-
-  // Screen readers (and anyone watching the page's text) hear the screen changes and each hit.
-  function announce(message) {
-    status.textContent = message;
-  }
-
-  function startGame() {
-    world.reset();
-    accumulator = 0;
-    screen = SCREEN_PLAY;
-    announce(`Playing. ${LIVES} lives.`);
-  }
-
-  function endGame() {
-    screen = SCREEN_OVER;
-    if (world.state.score > best) {
-      best = world.state.score;
-      saveBest(best);
+function buildTitleSlots() {
+  const list = document.getElementById('save-slots');
+  if (!list) return;
+  const slots = listSlots();
+  list.innerHTML = slots.map((s) => {
+    if (s.status === 'ok') {
+      const d = new Date(s.date);
+      return `<button class="slot" data-slot="${s.slot}">Slot ${s.slot + 1} — Mission ${s.missionIndex + 1} — $${s.cash} — ${d.toLocaleDateString()}</button>`;
     }
-    announce(`Game over. Score ${world.state.score}. Best ${best}.`);
-  }
-
-  function handleActions() {
-    const actions = input.takeActions();
-    if (actions & ACTION_CONFIRM && (screen === SCREEN_TITLE || screen === SCREEN_OVER)) startGame();
-    else if (actions & ACTION_PAUSE && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    } else if (actions & (ACTION_PAUSE | ACTION_CONFIRM) && screen === SCREEN_PAUSED) {
-      screen = SCREEN_PLAY;
-      announce('Playing.');
-    }
-  }
-
-  function step() {
-    if (screen === SCREEN_TITLE) {
-      world.step(STEP, 0, true);
-      return;
-    }
-    const events = world.step(STEP, input.direction(), false);
-    if (events & EVENT_OVER) endGame();
-    else if (events & EVENT_HIT) announce(world.state.lives === 1 ? 'Hit. 1 life left.' : `Hit. ${world.state.lives} lives left.`);
-  }
-
-  function frame(now) {
-    requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
-    last = now;
-    handleActions();
-    if (screen === SCREEN_TITLE || screen === SCREEN_PLAY) {
-      while (accumulator >= STEP && (screen === SCREEN_TITLE || screen === SCREEN_PLAY)) {
-        step();
-        accumulator -= STEP;
-      }
-    } else {
-      accumulator = 0;
-    }
-    renderer.draw(world.state, screen, best);
-  }
-
-  // Leaving the tab pauses a running game rather than letting blocks fall unseen.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    }
+    if (s.status === 'corrupt') return `<button class="slot corrupt" data-slot="${s.slot}">Slot ${s.slot + 1} — Corrupt (click to overwrite)</button>`;
+    return `<button class="slot empty" data-slot="${s.slot}">Slot ${s.slot + 1} — Empty</button>`;
+  }).join('');
+  list.querySelectorAll('.slot').forEach((b) => {
+    b.addEventListener('click', () => {
+      const i = Number(b.dataset.slot);
+      const slot = listSlots()[i];
+      if (slot.status === 'ok') continueFromSlot(i);
+      else startNewGame(i);
+    });
   });
+}
 
-  announce('Block Dodger. Press Space or click to start.');
+function wireOverlays() {
+  document.getElementById('new-game-btn').addEventListener('click', () => { startNewGame(0); });
+  document.getElementById('resume-btn').addEventListener('click', () => { S.mode = 'playing'; S.paused = false; });
+  document.getElementById('save-btn').addEventListener('click', () => {
+    manualSave();
+    document.getElementById('save-btn').textContent = 'Saved!';
+    setTimeout(() => { document.getElementById('save-btn').textContent = 'Save game'; }, 1200);
+  });
+  document.getElementById('quit-btn').addEventListener('click', () => {
+    manualSave();
+    S.mode = 'title';
+    buildTitleSlots();
+  });
+  document.getElementById('retry-btn').addEventListener('click', () => { restartAfterDeath(); });
+  document.getElementById('dialog-accept').addEventListener('click', () => { acceptDialog(); });
+  document.getElementById('dialog-close').addEventListener('click', () => { S.dialog = null; });
+  document.querySelector('.garage-close').addEventListener('click', () => closeGarageMenu());
+  buildGarageMenu();
+  buildTitleSlots();
+}
+
+function update(dt) {
+  S.time += dt;
+  S.dayTime = (S.dayTime + dt * 0.01) % 24;
+  if (S.dialogCooldown > 0) S.dialogCooldown -= dt;
+
+  // Autopilot FIRST (dialog accept, driving) — never after the dialog branch.
+  let autopilotDrove = false;
+  if (S.autopilot) autopilotDrove = updateAutopilot(dt);
+
+  if (S.mode === 'playing' && !S.paused) {
+    // Garage: E near the garage in a car opens the menu, not exit.
+    if (pressed.interact && nearGarage() && S.player.inCar) {
+      openGarageMenu();
+      pressed.interact = false;
+    }
+    // Radio + weapons.
+    if (pressed.radio) cycleRadio();
+    if (pressed.cycleWeapon) cycleWeapon();
+    if (pressed.weapon1) switchWeapon('pistol');
+    if (pressed.weapon2) switchWeapon('smg');
+    if (pressed.weapon3) switchWeapon('shotgun');
+    if (pressed.pause) { S.mode = 'paused'; S.paused = true; }
+
+    updatePlayer(dt, autopilotDrove);
+    updateTraffic(dt, S.dayTime);
+    updatePeds(dt);
+    updateCourier(dt);
+    updateWanted(dt);
+    updatePolice(dt);
+    updateHeli(dt);
+    updateBullets(dt);
+    updateEnemies(dt);
+    updatePickups(dt);
+    updateCrates(dt);
+    updateMissions(dt);
+    separateCars(dt);
+    if (S.weapons) S.weapons.cooldown = Math.max(0, S.weapons.cooldown - dt);
+    // FX decay.
+    for (const fx of S.fx) fx.life -= dt;
+    S.fx = S.fx.filter((f) => f.life > 0);
+    S.flags.gunshot = false;
+    // Mouse world coordinates for aiming.
+    mouse.wx = mouse.x + S.camera.x;
+    mouse.wy = mouse.y + S.camera.y;
+    // Camera follows the player.
+    S.camera.x = Math.max(0, Math.min(3200 - viewW, S.player.x - viewW / 2));
+    S.camera.y = Math.max(0, Math.min(3200 - viewH, S.player.y - viewH / 2));
+  }
+  if (S.mode === 'paused' && pressed.pause) { S.mode = 'playing'; S.paused = false; }
+  if (S.mode === 'over' && !S.autopilot && pressed.accept) restartAfterDeath();
+
+  showDialog();
+  showTitle();
+  showPause();
+  showGameOver();
+  if (S.mode === 'title') buildTitleSlotsThrottled();
+}
+
+let slotBuildAt = 0;
+function buildTitleSlotsThrottled() {
+  const now = performance.now();
+  if (now - slotBuildAt > 1000) { slotBuildAt = now; buildTitleSlots(); }
+}
+
+function frame(t) {
+  const dt = Math.min(0.05, (t - lastT) / 1000 || 0.016);
+  lastT = t;
+  try {
+    update(dt);
+    if (S.mode !== 'title' || true) render(g, viewW, viewH);
+  } catch (err) {
+    console.error(err);
+  }
+  endFrameInput();
   requestAnimationFrame(frame);
 }
 
-if (shot) runShot(shot);
-else runGame();
+function boot() {
+  resize();
+  window.addEventListener('resize', resize);
+  initInput(canvas);
+  initAudio();
+  wireOverlays();
+  const params = new URLSearchParams(location.search);
+  const seedParam = Number(params.get('seed'));
+  S.seed = Number.isFinite(seedParam) && seedParam > 0 ? seedParam : RNG_SEED;
+  S.autopilot = params.get('autopilot') === '1' || params.has('shot');
+  AP_HOOKS.newGame = () => startNewGame(0);
+  generateWorld(S.seed);
+  initWeapons();
+  spawnParkedCars(rng);
+  initTraffic(12);
+  initPeds(20);
+  spawnWorldCrates();
+  const shot = params.get('shot');
+  if (shot) {
+    applyShot(shot, startNewGame);
+  } else {
+    S.mode = 'title';
+  }
+  // Debug / playtest hook: the suites drive the game through this.
+  window.__game = {
+    S,
+    startNewGame,
+    acceptDialog,
+    setHeat,
+    saveToSlot,
+    listSlots,
+    version: 'crescent-bay-v4',
+  };
+  requestAnimationFrame(frame);
+}
+
+boot();

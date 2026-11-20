@@ -1,53 +1,56 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
+// Crescent Bay — keyboard + mouse input. One job: turn DOM events into a
+// small state object the player and autopilot both read. Edge flags
+// (pressed this frame) are cleared at the end of each frame by main.
+export const keys = {};
+export const mouse = { x: 0, y: 0, down: false, pressed: false, wx: 0, wy: 0 };
+export const pressed = {}; // key -> true only on the frame it went down
 
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
+const KEYMAP = {
+  KeyW: 'up', ArrowUp: 'up',
+  KeyS: 'down', ArrowDown: 'down',
+  KeyA: 'left', ArrowLeft: 'left',
+  KeyD: 'right', ArrowRight: 'right',
+  ShiftLeft: 'sprint', ShiftRight: 'sprint',
+  KeyE: 'interact',
+  KeyQ: 'cycleWeapon',
+  KeyR: 'radio',
+  Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3',
+  Escape: 'pause',
+  Enter: 'accept',
+};
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
-
-export function createInput(target) {
-  let left = false;
-  let right = false;
-  let actions = 0;
-
-  window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
+export function initInput(canvas) {
+  window.addEventListener('keydown', (e) => {
+    const name = KEYMAP[e.code];
+    if (name) {
+      if (!keys[name]) pressed[name] = true;
+      keys[name] = true;
+      if (name !== 'accept') e.preventDefault();
+    }
   });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
+  window.addEventListener('keyup', (e) => {
+    const name = KEYMAP[e.code];
+    if (name) keys[name] = false;
   });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
+  canvas.addEventListener('mousemove', (e) => {
+    const r = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - r.left;
+    mouse.y = e.clientY - r.top;
   });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) { mouse.down = true; mouse.pressed = true; }
   });
-
-  return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
-    },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
-    },
-  };
+  window.addEventListener('mouseup', (e) => {
+    if (e.button === 0) mouse.down = false;
+  });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 }
+
+export function endFrameInput() {
+  for (const k of Object.keys(pressed)) delete pressed[k];
+  mouse.pressed = false;
+}
+
+// Test / autopilot helpers: pretend a key was pressed this frame.
+export function fakePress(name) { pressed[name] = true; keys[name] = true; }
+export function fakeRelease(name) { keys[name] = false; }

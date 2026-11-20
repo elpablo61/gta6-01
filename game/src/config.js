@@ -1,61 +1,45 @@
-// Every tuning number and colour in one place. The playfield is a fixed 1280x720 logical area;
-// the renderer scales it to the window, so no rule below depends on the screen size.
+// Crescent Bay — shared tuning constants. One clear job: every magic
+// number the rest of the game agrees on lives here.
+export const WORLD_SIZE = 3200;
+export const ROAD_COUNT = 8;
+export const ROAD_SPACING = 400;
+export const ROAD_START = 200;
+export const ROAD_WIDTH = 64;
+export const ROAD_HALF = 32;
+export const ON_ROAD_TOL = 42;
+export const RNG_SEED = 20261118;
+export const SHOT_SEED = 7;
 
-export const FIELD = { width: 1280, height: 720, groundY: 664 };
+// Wanted: heat 0-100, stars at these thresholds.
+export const STAR_THRESHOLDS = [0, 12, 30, 52, 74, 92];
+// Heat decays only while no police is within this range for this long.
+export const HIDE_RANGE = 450;
+export const HIDE_SECONDS = 3;
+// Spray Shop: radius and heat drain per second.
+export const SPRAY_RADIUS = 150;
+export const SPRAY_DRAIN = 50;
 
-/** The simulation's fixed step, in seconds: 60 updates a second whatever the display's rate. */
-export const STEP = 1 / 60;
+// Player on foot.
+export const WALK_SPEED = 230;
+export const SPRINT_SPEED = 330;
+export const PLAYER_HP = 100;
 
-export const PLAYER = {
-  width: 72,
-  height: 24,
-  speed: 560,
-  invulnerable: 1.5,
+// Car physics.
+export const SHARP_TURN = 0.9; // |angle diff| above this: stop and rotate in place
+export const WAYPOINT_ACCEPT = 70;
+export const WALL_DAMAGE_TICK = 0.5;
+export const WALL_DAMAGE = 4;
+export const COLLISION_DAMAGE = 3; // per second per car
+
+// Combat.
+export const ENEMY_HP = 36;
+export const PISTOL_DAMAGE = 18;
+
+// District ground colours.
+export const DISTRICT_COLORS = {
+  north: '#7fae7a',
+  oldtown: '#b98a5e',
+  downtown: '#8d9bb5',
+  waterfront: '#e0c98f',
+  docks: '#9a9a92',
 };
-
-export const LIVES = 3;
-
-export const BLOCK = {
-  minWidth: 40,
-  maxWidth: 110,
-  height: 36,
-  speed: 240,
-  speedPerLevel: 30,
-  speedJitter: 90,
-  interval: 0.55,
-  intervalScale: 0.88,
-  minInterval: 0.14,
-  dodgePoints: 1,
-};
-
-export const COIN = {
-  size: 24,
-  speed: 190,
-  speedPerLevel: 14,
-  interval: 1.4,
-  intervalJitter: 0.8,
-  points: 10,
-};
-
-/** Seconds of play per level, and the last level: speeds and spawn rates stop growing there. */
-export const LEVEL = { seconds: 12, max: 12 };
-
-/** How many falling things can exist at once; the pool is allocated once, at boot. */
-export const POOL_SIZE = 64;
-
-export const PALETTE = {
-  backdrop: '#11141b',
-  sky: '#1b1f2a',
-  ground: '#2a3040',
-  player: '#4fc3f7',
-  block: '#e5534b',
-  coin: '#f2c94c',
-  panel: '#252b38',
-  text: '#eef1f5',
-  muted: '#8b93a3',
-};
-
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-
-/** Where the best score is kept between visits (this browser only). */
-export const BEST_KEY = 'block-dodger.best';

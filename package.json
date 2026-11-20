@@ -1,0 +1,1 @@
+{"description":"Crescent Bay — a 2D top-down open-world crime game built for the make.fun gta6-01 bounty","devDependencies":{"playwright":"^1.49.0"},"name":"crescent-bay","scripts":{"playtest":"node tools/playtest.mjs","serve":"node serve.ts","sheet":"python3 tools/contact-sheet.py","shots":"node tools/screenshots.mjs"},"type":"module","version":"4.0.0"}
