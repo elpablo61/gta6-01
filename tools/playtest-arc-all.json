@@ -1,0 +1,68 @@
+{
+  "perMission": {
+    "m1": {
+      "ok": true,
+      "secs": 22,
+      "failReason": ""
+    },
+    "m2": {
+      "ok": true,
+      "secs": 96,
+      "failReason": ""
+    },
+    "m3": {
+      "ok": true,
+      "secs": 22,
+      "failReason": ""
+    },
+    "m4": {
+      "ok": true,
+      "secs": 16,
+      "failReason": ""
+    },
+    "m5": {
+      "ok": true,
+      "secs": 14,
+      "failReason": ""
+    },
+    "m6": {
+      "ok": true,
+      "secs": 38,
+      "failReason": ""
+    },
+    "m7": {
+      "ok": true,
+      "secs": 16,
+      "failReason": ""
+    },
+    "m8": {
+      "ok": true,
+      "secs": 26,
+      "failReason": ""
+    },
+    "m9": {
+      "ok": true,
+      "secs": 10,
+      "failReason": ""
+    },
+    "m10": {
+      "ok": true,
+      "secs": 169,
+      "failReason": ""
+    },
+    "m11": {
+      "ok": true,
+      "secs": 70,
+      "failReason": ""
+    },
+    "m12": {
+      "ok": true,
+      "secs": 141,
+      "failReason": ""
+    }
+  },
+  "heliSeen": true,
+  "smgSeen": true,
+  "garageBought": true,
+  "errors": []
+}

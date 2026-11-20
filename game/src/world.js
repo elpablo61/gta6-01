@@ -50,6 +50,33 @@ export function nearestRoadPoint(x, y) {
   return best;
 }
 
+// Nearest road point reachable in a straight line (no building between
+// the point and the car). The plain nearest point can sit behind a
+// building from an off-road car, and driving straight at it wedges the
+// car on the building face forever (m11: truck at 2158,2649 pressed
+// against a building, road point 2200,2649 just 42 away behind the
+// wall, speed 0, taking wall damage). Falls back to the plain nearest
+// point when every candidate is blocked.
+export function nearestReachableRoadPoint(x, y) {
+  const cands = [];
+  for (const rx of roads) {
+    cands.push({ x: rx, y: clamp(y, 0, WORLD_SIZE) });
+    cands.push({ x: clamp(x, 0, WORLD_SIZE), y: rx });
+  }
+  cands.sort((a, b) => ((a.x - x) ** 2 + (a.y - y) ** 2) - ((b.x - x) ** 2 + (b.y - y) ** 2));
+  for (const c of cands) {
+    const d = Math.hypot(c.x - x, c.y - y);
+    const steps = Math.max(1, Math.ceil(d / 20));
+    let clear = true;
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      if (collideBuildings(x + (c.x - x) * t, y + (c.y - y) * t, 18)) { clear = false; break; }
+    }
+    if (clear) return c;
+  }
+  return nearestRoadPoint(x, y);
+}
+
 export function onRoad(x, y, tol) {
   for (const r of roads) {
     if (Math.abs(x - r) <= tol || Math.abs(y - r) <= tol) return true;

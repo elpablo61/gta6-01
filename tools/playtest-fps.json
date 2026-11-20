@@ -1,0 +1,12 @@
+[
+  {
+    "name": "fps: >=50 during a wanted chase",
+    "ok": true,
+    "detail": "57.6 fps (576 frames / 10s)"
+  },
+  {
+    "name": "fps: zero console errors",
+    "ok": true,
+    "detail": ""
+  }
+]

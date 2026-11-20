@@ -22,7 +22,7 @@ function freshFlags() {
 }
 
 function freshAuto() {
-  return { walkTarget: null, walkRoute: null, walkIdx: 0, shootTimer: 0 };
+  return { walkTarget: null, walkRoute: null, walkIdx: 0, shootTimer: 0, switchTarget: null };
 }
 
 function freshStats() {

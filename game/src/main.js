@@ -164,7 +164,10 @@ function update(dt) {
     S.camera.x = Math.max(0, Math.min(3200 - viewW, S.player.x - viewW / 2));
     S.camera.y = Math.max(0, Math.min(3200 - viewH, S.player.y - viewH / 2));
   }
-  if (S.mode === 'paused' && pressed.pause) { S.mode = 'playing'; S.paused = false; }
+  // Resume is else-if: the pause branch above may have just set
+  // mode='paused' on this same frame (same keypress) — resuming there
+  // would cancel the pause instantly, so Escape would never pause.
+  else if (S.mode === 'paused' && pressed.pause) { S.mode = 'playing'; S.paused = false; }
   if (S.mode === 'over' && !S.autopilot && pressed.accept) restartAfterDeath();
 
   showDialog();

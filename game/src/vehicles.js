@@ -2,9 +2,9 @@
 // brain. Every car (player, traffic, police, courier) steers with the
 // same radius-based rules, so the autopilot and traffic agree.
 import { S } from './state.js';
-import { WORLD_SIZE, ON_ROAD_TOL, SHARP_TURN, WAYPOINT_ACCEPT, WALL_DAMAGE_TICK, WALL_DAMAGE } from './config.js';
+import { WORLD_SIZE, ON_ROAD_TOL, SHARP_TURN, WAYPOINT_ACCEPT, WALL_DAMAGE_TICK, WALL_DAMAGE, COLLISION_DAMAGE } from './config.js';
 import { makeRng, clamp, normAngle, angleDiff, dist } from './random.js';
-import { roads, findRoute, nearestJunction, nearestRoadPoint, onRoad, collideBuildings, resolveCircle } from './world.js';
+import { roads, findRoute, nearestJunction, nearestRoadPoint, nearestReachableRoadPoint, onRoad, collideBuildings, resolveCircle } from './world.js';
 
 export const CAR_TYPES = {
   sedan: { top: 380, accel: 260, len: 46, wid: 22, color: '#c94f4f' },
@@ -80,11 +80,29 @@ export function spawnTrafficCar(rng) {
 
 // Rebuild a car's route only when its target moved >100 from the route's
 // recorded destination (never every frame — that was the m2 freeze).
+// A rebuild must NOT reset progress: a fast-moving target (the m2
+// courier at 380) rebuilds every ~0.3s, and resetting routeIdx to 0
+// re-aimed the car at the junction behind it, so it ping-ponged 180°
+// forever instead of chasing (angle wound to -30 rad, 0 ram hits in
+// 130s). Resume from the waypoint we were already driving to when it
+// is still on the new route.
 export function ensureRoute(car, tx, ty) {
   if (!car.route || !car.routeDest || dist(tx, ty, car.routeDest.x, car.routeDest.y) > 100) {
+    const oldWp = car.route && car.routeIdx < car.route.length ? car.route[car.routeIdx] : null;
+    const oldWasTarget = car.route ? car.routeIdx >= car.route.length - 1 : false;
     car.route = findRoute(car.x, car.y, tx, ty);
     car.routeDest = { x: tx, y: ty };
     car.routeIdx = 0;
+    if (oldWp) {
+      const k = car.route.findIndex((p) => p.x === oldWp.x && p.y === oldWp.y);
+      if (k > 0) car.routeIdx = k;
+      // Endgame: the old waypoint was the moving target itself (a live
+      // position, never found in the new route). Resetting to 0 sent the
+      // car back to the junction behind it, so it orbited the courier
+      // at 100-200 units and never landed a ram (m2: 1 hit in 120s).
+      // Stay on the new target instead — keep driving at the courier.
+      else if (k === -1 && oldWasTarget) car.routeIdx = car.route.length - 1;
+    }
   }
 }
 
@@ -94,14 +112,17 @@ export function ensureRoute(car, tx, ty) {
 // reverses straight when stuck; recovers off-road via the nearest road
 // then the nearest junction.
 export function driveToward(car, tx, ty, dt, cruise, opts = {}) {
-  const arrive = opts.arrive ?? 70;
+  const arrive = opts.arrive ?? 30;
   // Off-road recovery: sticky until the nearest junction is reached.
   if (car.rec) {
     const j = nearestJunction(car.x, car.y);
     if (dist(car.x, car.y, j.x, j.y) < 60) car.rec = false;
     else { tx = j.x; ty = j.y; }
   } else if (!onRoad(car.x, car.y, ON_ROAD_TOL)) {
-    const rp = nearestRoadPoint(car.x, car.y);
+    // Reachable road point, not just nearest: the nearest point can sit
+    // behind a building from the car, and driving straight at it wedges
+    // the car on the building face (m11 truck, speed 0, wall damage).
+    const rp = nearestReachableRoadPoint(car.x, car.y);
     const j = nearestJunction(rp.x, rp.y);
     if (dist(car.x, car.y, rp.x, rp.y) < 30) { car.rec = true; tx = j.x; ty = j.y; }
     else { tx = rp.x; ty = rp.y; }
@@ -117,7 +138,14 @@ export function driveToward(car, tx, ty, dt, cruise, opts = {}) {
     }
   } else wp = { x: tx, y: ty };
   const dTarget = dist(car.x, car.y, tx, ty);
-  if (dTarget < arrive && (!car.route || car.routeIdx >= car.route.length)) {
+  const routeDone = !car.route || car.routeIdx >= car.route.length;
+  // Arrive only when really close (30): the old 70 stranded the car
+  // short of objectives that need a closer stop — m2 froze ~52 off-road
+  // from its road point, m6 froze 57 short of a money drop (pickup
+  // radius is 42), both braking to 0 forever with the route exhausted.
+  // 30 sits inside the pickup radius, and the 120 crawl cap keeps the
+  // approach slow enough to stop without overshooting.
+  if (dTarget < arrive && routeDone) {
     car.speed = Math.max(0, car.speed - car.accel * 2.2 * dt);
     if (car.speed < 5) car.speed = 0;
     moveCar(car, dt);

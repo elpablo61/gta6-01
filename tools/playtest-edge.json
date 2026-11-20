@@ -1,0 +1,52 @@
+[
+  {
+    "name": "edge: heat -> stars thresholds",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "edge: Escape pauses",
+    "ok": true,
+    "detail": "paused"
+  },
+  {
+    "name": "edge: Escape resumes",
+    "ok": true,
+    "detail": "playing"
+  },
+  {
+    "name": "edge: Digit2 with no SMG stays on pistol",
+    "ok": true,
+    "detail": "pistol"
+  },
+  {
+    "name": "edge: Q cycles with one weapon stays on pistol",
+    "ok": true,
+    "detail": "pistol"
+  },
+  {
+    "name": "edge: radio cycles 1,2,0 and wraps",
+    "ok": true,
+    "detail": "1,2,0"
+  },
+  {
+    "name": "edge: corrupt slot reports corrupt",
+    "ok": true,
+    "detail": "corrupt"
+  },
+  {
+    "name": "edge: game still boots with a corrupt slot",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "edge: world has cars and peds",
+    "ok": true,
+    "detail": "cars 48 peds 26"
+  },
+  {
+    "name": "edge: zero console errors",
+    "ok": true,
+    "detail": ""
+  }
+]

@@ -112,16 +112,13 @@ export function updateEnemies(dt) {
   for (const e of S.enemies) {
     if (e.hp <= 0) continue;
     const d = dist(e.x, e.y, p.x, p.y);
-    // Enemies hold their arena ground and shoot when the player is near.
-    if (d > 320) {
-      const a = Math.atan2(p.y - e.y, p.x - e.x);
-      e.x += Math.cos(a) * e.speed * 0.5 * dt;
-      e.y += Math.sin(a) * e.speed * 0.5 * dt;
-    } else if (d < 140) {
-      const a = Math.atan2(e.y - p.y, e.x - p.x);
-      e.x += Math.cos(a) * e.speed * 0.4 * dt;
-      e.y += Math.sin(a) * e.speed * 0.4 * dt;
-    }
+    // Guards hold their arena ground and shoot when the player is near
+    // (spec). They do not walk at all: walking in straight lines
+    // carried them into buildings and alleys the player cannot reach or
+    // shoot into — m8: a guard ended up at 2038,1198 behind a building
+    // face while the player wedged against it at 2087,1198, LOS blocked
+    // forever, and the tether/back-away limits did not stop it. A guard
+    // stands at its post, faces the player, and fires.
     e.angle = Math.atan2(p.y - e.y, p.x - e.x);
     e.fireTimer -= dt;
     if (e.fireTimer <= 0 && d < 480 && p.onFoot) {

@@ -67,6 +67,13 @@ function snapshot(page) {
       owned: S.weapons ? Object.keys(S.weapons.owned).filter((k) => S.weapons.owned[k]) : [],
       heli: !!S.heli, garageBuys: S.stats.garageBuys,
       dialog: !!S.dialog, cars: S.cars.length, peds: S.peds.length,
+      paused: S.paused, stage: S.mission ? S.mission.stages[S.mission.stageIndex].type : null,
+      mission: S.mission ? S.mission.id : null,
+      carSpd: S.player.inCar ? Math.round(S.player.inCar.speed) : null,
+      carHp: S.player.inCar ? Math.round(S.player.inCar.hp) : null,
+      carTop: S.player.inCar ? S.player.inCar.top : null,
+      routeDest: S.player.inCar && S.player.inCar.routeDest ? `${S.player.inCar.routeDest.x},${S.player.inCar.routeDest.y}` : null,
+      rec: S.player.inCar ? !!S.player.inCar.rec : null,
     };
   });
 }
@@ -194,7 +201,8 @@ async function arc(browser, only) {
       if (s.garageBuys > 0) garageBought = true;
       appendFileSync(PROGRESS,
         `${new Date().toISOString()} ${id} idx=${s.missionIndex} completed=${s.completed} mode=${s.mode} ` +
-        `pos=${s.x},${s.y} heat=${s.heat} stars=${s.stars} heli=${s.heli} cash=${s.cash}\n`);
+        `pos=${s.x},${s.y} heat=${s.heat} stars=${s.stars} heli=${s.heli} cash=${s.cash} ` +
+        `mis=${s.mission} stage=${s.stage} inCar=${s.inCar} carSpd=${s.carSpd} carHp=${s.carHp} carTop=${s.carTop} routeDest=${s.routeDest} rec=${s.rec} paused=${s.paused} dialog=${s.dialog}\n`);
       if (s.completed > targetIndex) { done = true; break; }
       if (s.mode === 'over') { failReason = 'game over during mission'; break; }
       if (s.hp <= 0) { failReason = 'player hp 0'; break; }
