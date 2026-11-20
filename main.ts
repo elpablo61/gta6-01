@@ -4,10 +4,20 @@
 // This program hands the entry in: it copies game/ and screenshots/
 // beside this file into the output directory and writes
 // /output/dossier.json with the vendored make.fun library.
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
+
+// Count real files under a directory (recursive), for the build log.
+function countFiles(dir: string): number {
+  if (!existsSync(dir)) return 0;
+  let n = 0;
+  for (const e of readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (e.isFile()) n++;
+  }
+  return n;
+}
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
@@ -33,4 +43,5 @@ const dossier = buildDossier(out, {
 writeFileSync(join(out, 'dossier.json'), dossier);
 const size = Buffer.byteLength(dossier, 'utf8');
 console.log(`dossier.json: ${size} bytes`);
+console.log(`screenshots: ${countFiles(join(here, 'screenshots'))} files; game: ${countFiles(join(here, 'game'))} files`);
 if (size > 1450000) console.warn(`WARNING: dossier over 1,450,000 bytes (${size})`);

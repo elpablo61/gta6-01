@@ -1,0 +1,47 @@
+[
+  {
+    "name": "cold: title screen visible",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "cold: all semantic overlays exist",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "cold: 3 save slots listed",
+    "ok": true,
+    "detail": "[\"empty\",\"empty\",\"empty\"]"
+  },
+  {
+    "name": "cold: new game is playing",
+    "ok": true,
+    "detail": "playing"
+  },
+  {
+    "name": "cold: player moves on W",
+    "ok": true,
+    "detail": "600,800 -> 600,516"
+  },
+  {
+    "name": "cold: R cycles the radio station",
+    "ok": true,
+    "detail": "0 -> 1"
+  },
+  {
+    "name": "cold: save to slot 1 reads back ok",
+    "ok": true,
+    "detail": "ok"
+  },
+  {
+    "name": "cold: canvas renders (screenshot non-trivial)",
+    "ok": true,
+    "detail": "39816 bytes"
+  },
+  {
+    "name": "cold: zero console errors",
+    "ok": true,
+    "detail": ""
+  }
+]
