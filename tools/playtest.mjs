@@ -69,6 +69,8 @@ function snapshot(page) {
       dialog: !!S.dialog, cars: S.cars.length, peds: S.peds.length,
       paused: S.paused, stage: S.mission ? S.mission.stages[S.mission.stageIndex].type : null,
       mission: S.mission ? S.mission.id : null,
+      over: S.overReason || null, cops: S.police.length, patrols: S.patrols.length,
+      enemies: S.enemies.length,
       carSpd: S.player.inCar ? Math.round(S.player.inCar.speed) : null,
       carHp: S.player.inCar ? Math.round(S.player.inCar.hp) : null,
       carTop: S.player.inCar ? S.player.inCar.top : null,
@@ -202,9 +204,10 @@ async function arc(browser, only) {
       appendFileSync(PROGRESS,
         `${new Date().toISOString()} ${id} idx=${s.missionIndex} completed=${s.completed} mode=${s.mode} ` +
         `pos=${s.x},${s.y} heat=${s.heat} stars=${s.stars} heli=${s.heli} cash=${s.cash} ` +
-        `mis=${s.mission} stage=${s.stage} inCar=${s.inCar} carSpd=${s.carSpd} carHp=${s.carHp} carTop=${s.carTop} routeDest=${s.routeDest} rec=${s.rec} paused=${s.paused} dialog=${s.dialog}\n`);
+        `mis=${s.mission} stage=${s.stage} inCar=${s.inCar} carSpd=${s.carSpd} carHp=${s.carHp} carTop=${s.carTop} routeDest=${s.routeDest} rec=${s.rec} paused=${s.paused} dialog=${s.dialog} ` +
+        `hp=${Math.round(s.hp)} over=${s.over} cops=${s.cops} patrols=${s.patrols} enemies=${s.enemies}\n`);
       if (s.completed > targetIndex) { done = true; break; }
-      if (s.mode === 'over') { failReason = 'game over during mission'; break; }
+      if (s.mode === 'over') { failReason = `game over during mission (${s.over || '?'})`; break; }
       if (s.hp <= 0) { failReason = 'player hp 0'; break; }
       await sleep(2000);
     }

@@ -1,0 +1,30 @@
+[
+  {
+    "shot": "cover",
+    "file": "1-cover.jpg",
+    "bytes": 64976,
+    "errors": 0,
+    "ok": true
+  },
+  {
+    "shot": "mission",
+    "file": "2-mission.jpg",
+    "bytes": 65443,
+    "errors": 0,
+    "ok": true
+  },
+  {
+    "shot": "night",
+    "file": "3-night.jpg",
+    "bytes": 63171,
+    "errors": 0,
+    "ok": true
+  },
+  {
+    "shot": "start",
+    "file": "4-start.jpg",
+    "bytes": 72025,
+    "errors": 0,
+    "ok": true
+  }
+]

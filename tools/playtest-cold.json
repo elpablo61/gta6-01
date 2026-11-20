@@ -22,7 +22,7 @@
   {
     "name": "cold: player moves on W",
     "ok": true,
-    "detail": "600,800 -> 600,516"
+    "detail": "600,800 -> 600,524"
   },
   {
     "name": "cold: R cycles the radio station",
@@ -37,7 +37,7 @@
   {
     "name": "cold: canvas renders (screenshot non-trivial)",
     "ok": true,
-    "detail": "39816 bytes"
+    "detail": "40199 bytes"
   },
   {
     "name": "cold: zero console errors",

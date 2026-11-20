@@ -7,12 +7,12 @@
     },
     "m2": {
       "ok": true,
-      "secs": 96,
+      "secs": 245,
       "failReason": ""
     },
     "m3": {
       "ok": true,
-      "secs": 22,
+      "secs": 24,
       "failReason": ""
     },
     "m4": {
@@ -22,42 +22,42 @@
     },
     "m5": {
       "ok": true,
-      "secs": 14,
+      "secs": 20,
       "failReason": ""
     },
     "m6": {
       "ok": true,
-      "secs": 38,
+      "secs": 44,
       "failReason": ""
     },
     "m7": {
       "ok": true,
-      "secs": 16,
+      "secs": 20,
       "failReason": ""
     },
     "m8": {
       "ok": true,
-      "secs": 26,
+      "secs": 12,
       "failReason": ""
     },
     "m9": {
       "ok": true,
-      "secs": 10,
+      "secs": 14,
       "failReason": ""
     },
     "m10": {
       "ok": true,
-      "secs": 169,
+      "secs": 24,
       "failReason": ""
     },
     "m11": {
       "ok": true,
-      "secs": 70,
+      "secs": 36,
       "failReason": ""
     },
     "m12": {
       "ok": true,
-      "secs": 141,
+      "secs": 46,
       "failReason": ""
     }
   },

@@ -4,7 +4,7 @@
 // This program hands the entry in: it copies game/ and screenshots/
 // beside this file into the output directory and writes
 // /output/dossier.json with the vendored make.fun library.
-import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -27,6 +27,11 @@ cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) {
   cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
+}
+// The contact sheet is a verification artifact, not an entry screenshot:
+// the dossier caps screenshots at 4, so keep it out of the output dir.
+for (const sheet of ['contact-sheet.jpg', 'contact-sheet-gray.jpg']) {
+  rmSync(join(out, 'screenshots', sheet), { force: true });
 }
 
 // The scorer's own caps (reference/gate.json): only text_max_bytes shapes

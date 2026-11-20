@@ -116,6 +116,12 @@ export function startMission(id) {
     hitCooldown: 0, courierPoint: null,
   };
   S.missionTimeLeft = def.limit;
+  // Fresh mission, fresh streets: foot cops and patrols left over from
+  // the previous mission (m7's escape leaves up to 5) must not arrest
+  // the player while it stands still trading fire in a shootout (m8:
+  // CAUGHT 4s after exiting the car, cops=5 at mission start). The
+  // mission's own setHeat calls below re-arm the wanted level it needs.
+  S.police = []; S.patrols = []; S.roadblocks = [];
   S.flags = { ...S.flags, garageBought: false };
   if (def.night) S.dayTime = 23;
   if (def.id === 'm2') spawnCourier();
@@ -272,4 +278,5 @@ export function restartAfterDeath() {
   S.mission = null;
   S.dialogCooldown = 1;
   S.mode = 'playing';
+  S.overReason = null;
 }

@@ -94,7 +94,15 @@ export function updatePolice(dt) {
   // 1.2s straight. Running away breaks the arrest.
   for (const cop of S.police) {
     const d = dist(cop.x, cop.y, p.x, p.y);
-    const inArena = S.mission && S.mission.stage && S.mission.stage.type === 'shootout';
+    // Read the live stage off the mission's stage list: S.mission has
+    // no `.stage` property (it was never assigned), so the old lookup
+    // `S.mission.stage.type` was always undefined and this ring never
+    // engaged — cops charged straight at a stationary shooter and
+    // arrested it at full HP (m12 run 3: ~31 deaths, hp 100 at each
+    // reset, heat 74 from mission start). With the ring live, cops hold
+    // 300 out during a shootout and can no longer close to arrest range.
+    const st = S.mission && S.mission.stages ? S.mission.stages[S.mission.stageIndex] : null;
+    const inArena = !!st && st.type === 'shootout';
     let tx = p.x, ty = p.y;
     if (inArena && d < 260) {
       // Perimeter: hold a ring, never pile onto one spot.
@@ -120,6 +128,10 @@ export function updatePolice(dt) {
   // Spray Shop so they never shove the player out of it.
   for (const car of S.patrols) {
     if (car.hp <= 0) continue;
+    // Belt-and-braces: never drive the player's own car at the player
+    // (a stolen patrol car is removed from S.patrols in enterCar, but
+    // a stale reference must never self-ram).
+    if (car === p.inCar) continue;
     const dSpray = dist(car.x, car.y, SPRAY_SHOP.x, SPRAY_SHOP.y);
     if (dSpray < 130) {
       car.speed = Math.max(-80, car.speed - 300 * dt);

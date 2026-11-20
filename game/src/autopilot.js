@@ -17,7 +17,7 @@ import { SPRAY_SHOP, HIDEOUT, GARAGE_POS } from './police.js';
 import { stage, acceptDialog, restartAfterDeath } from './missions.js';
 import { enterCar, exitCar, nearestCar } from './player.js';
 import { firePlayerBullet } from './combat.js';
-import { currentAmmo } from './weapons.js';
+import { currentAmmo, currentWeapon } from './weapons.js';
 import { openGarageMenu, closeGarageMenu, garageMenuOpen, buyCheapestUpgrade, nearGarage } from './garage.js';
 import { mouse } from './input.js';
 
@@ -164,14 +164,35 @@ function nearestArenaAmmo() {
   return best;
 }
 
-function nearestArenaCrate() {
+function nearestArenaHealth(arena) {
   let best = null, bestD = Infinity;
-  for (const c of S.crates) {
-    if (c.taken) continue;
-    const d = dist(S.player.x, S.player.y, c.x, c.y);
-    if (d < bestD) { bestD = d; best = c; }
+  for (const pk of S.pickups) {
+    if (pk.kind !== 'health' || pk.taken) continue;
+    // Only this arena's pickups: a leftover from an earlier shootout
+    // could sit on the far side of the city.
+    if (dist(pk.x, pk.y, arena.x, arena.y) > 300) continue;
+    const d = dist(S.player.x, S.player.y, pk.x, pk.y);
+    if (d < bestD) { bestD = d; best = pk; }
   }
   return best;
+}
+
+function nearestArenaCrate() {
+  // Prefer the arena SMG crate: it is the best shootout weapon
+  // (10 dmg / 0.09s ≈ 111 dps vs pistol 56, shotgun 50). Only crates
+  // spawned for this arena count — the world shotgun crate sits exactly
+  // on the m10 arena centre, so "nearest crate" grabbed it first and
+  // the autopilot never owned the SMG (run 3: m10 passed, smgSeen
+  // false). Falls back to the nearest arena crate when no SMG is left.
+  let best = null, bestD = Infinity;
+  let smg = null, smgD = Infinity;
+  for (const c of S.crates) {
+    if (c.taken || !c.arena) continue;
+    const d = dist(S.player.x, S.player.y, c.x, c.y);
+    if (c.weapon === 'smg' && d < smgD) { smgD = d; smg = c; }
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return smg || best;
 }
 
 // Returns true if the autopilot drove the car this frame (manual
@@ -226,12 +247,20 @@ export function updateAutopilot(dt) {
       driveToward(p.inCar, arena.x, arena.y, dt, effectiveTop(p.inCar));
       return true;
     }
+    // Hurt: grab an arena health pickup first. A straight trade with
+    // 3-5 guards drains HP faster than the fight ends (m10: DOWN at
+    // 2 guards left, hp 28 -> 0); the mission already spawns two +40
+    // pickups in the arena for exactly this.
+    if (S.player.hp < 60) {
+      const hp = nearestArenaHealth(arena);
+      if (hp) { walkTo(hp.x, hp.y, dt); return false; }
+    }
     // Pick up a better weapon crate in the arena first (m10). Only
     // crates near the arena count: world crates (e.g. the one at 700,700)
     // sit inside building blocks, and walking to one wedges the player
     // on a building face forever (m8 freeze).
     const crate = nearestArenaCrate();
-    if (crate && S.weapons.current === 'pistol' && dist(p.x, p.y, crate.x, crate.y) < 500 && dist(crate.x, crate.y, arena.x, arena.y) < 300) {
+    if (crate && S.weapons.current !== 'smg' && dist(p.x, p.y, crate.x, crate.y) < 500 && dist(crate.x, crate.y, arena.x, arena.y) < 300) {
       walkTo(crate.x, crate.y, dt);
       return false;
     }
@@ -248,11 +277,15 @@ export function updateAutopilot(dt) {
     // line shoots back (m8 death loop: 96 shots, 0 kills, then DOWN).
     // Only fire with a clear line of sight; otherwise keep closing in.
     if (d > 200 || !hasLineOfSight(p.x, p.y, enemy.x, enemy.y)) { walkTo(enemy.x, enemy.y, dt); return false; }
-    // In range with a clear shot: aimed bursts every 0.45s, never spray.
+    // In range with a clear shot: aimed bursts at the weapon's own
+    // rate, never spray. A fixed 0.45s cadence made the SMG crate a
+    // downgrade (10 dmg / 0.45s = 22 dps vs pistol 18 / 0.45s = 40 dps)
+    // and lost the m10 trade; at its own rate the SMG is the upgrade
+    // it is meant to be. Same shot count, far less time under fire.
     a.shootTimer -= dt;
     mouse.wx = enemy.x; mouse.wy = enemy.y;
     if (a.shootTimer <= 0) {
-      a.shootTimer = 0.45;
+      a.shootTimer = currentWeapon().rate;
       const aim = Math.atan2(enemy.y - p.y, enemy.x - p.x);
       firePlayerBullet(aim);
     }

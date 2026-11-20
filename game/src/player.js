@@ -18,6 +18,10 @@ export function nearestCar(maxD) {
   let best = null, bestD = maxD;
   for (const car of S.cars) {
     if (car.hp <= 0) continue;
+    // Never steal a patrol car: it is still driven by the police brain
+    // (updatePolice steers it at the player) and wedges the player
+    // against walls/piers while ramming itself (m11 run 4: 452s).
+    if (car.isPolice) continue;
     const d = dist(S.player.x, S.player.y, car.x, car.y);
     if (d < bestD) { bestD = d; best = car; }
   }
@@ -28,6 +32,15 @@ export function enterCar(car) {
   if (!car) return false;
   const wasParked = car.parked;
   const wasTraffic = car.isTraffic;
+  // A stolen patrol car stops being a patrol: drop it from the patrol
+  // list and clear its police flag, so updatePolice never steers the
+  // player's own car at the player (self-ram) and the wanted system
+  // never counts it as nearby police. Belt-and-braces guard for the
+  // same case also lives in updatePolice.
+  if (car.isPolice) {
+    S.patrols = S.patrols.filter((c) => c !== car);
+    car.isPolice = false;
+  }
   car.parked = false;
   car.isTraffic = false;
   car.isPlayer = true;

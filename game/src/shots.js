@@ -62,8 +62,10 @@ export function applyShot(name, startNewGame) {
     putPlayerInCar(2600, 1800, 'sports', -Math.PI / 2);
     addPatrolBehind(2600, 1800, 2);
     S.roadblocks.push({ x: 2600, y: 1000, angle: 0, hp: 60 });
-    setHeat(74);
     startMission('m7');
+    // Heat AFTER startMission: startMission re-arms m7's own heat (58),
+    // so setting 74 before it was overwritten and the shot read 3 stars.
+    setHeat(74);
     S.mission.stageIndex = 1;
   }
   // Patrol loop for the cover/night chase poses: keep driving north.

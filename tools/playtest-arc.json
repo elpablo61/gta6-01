@@ -1,0 +1,82 @@
+[
+  {
+    "name": "arc: m1 completable by autopilot",
+    "ok": true,
+    "detail": "22s"
+  },
+  {
+    "name": "arc: m2 completable by autopilot",
+    "ok": true,
+    "detail": "245s"
+  },
+  {
+    "name": "arc: m3 completable by autopilot",
+    "ok": true,
+    "detail": "24s"
+  },
+  {
+    "name": "arc: m4 completable by autopilot",
+    "ok": true,
+    "detail": "16s"
+  },
+  {
+    "name": "arc: m5 completable by autopilot",
+    "ok": true,
+    "detail": "20s"
+  },
+  {
+    "name": "arc: m6 completable by autopilot",
+    "ok": true,
+    "detail": "44s"
+  },
+  {
+    "name": "arc: m7 completable by autopilot",
+    "ok": true,
+    "detail": "20s"
+  },
+  {
+    "name": "arc: m8 completable by autopilot",
+    "ok": true,
+    "detail": "12s"
+  },
+  {
+    "name": "arc: m9 completable by autopilot",
+    "ok": true,
+    "detail": "14s"
+  },
+  {
+    "name": "arc: m10 completable by autopilot",
+    "ok": true,
+    "detail": "24s"
+  },
+  {
+    "name": "arc: m11 completable by autopilot",
+    "ok": true,
+    "detail": "36s"
+  },
+  {
+    "name": "arc: m12 completable by autopilot",
+    "ok": true,
+    "detail": "46s"
+  },
+  {
+    "name": "arc: helicopter seen in the m9/m12 run",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "arc: SMG picked up in the m10 run",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "arc: garage purchase in the m11 run",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "arc: zero console errors",
+    "ok": true,
+    "detail": ""
+  }
+]
